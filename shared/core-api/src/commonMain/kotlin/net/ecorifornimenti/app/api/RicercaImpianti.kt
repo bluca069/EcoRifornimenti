@@ -44,6 +44,14 @@ interface SorgenteImpianti {
 
     /** La scheda completa di un impianto, caricata solo quando l'utente la apre. */
     suspend fun dettaglio(idImpianto: Int): DettaglioImpianto
+
+    /**
+     * Dimentica tutto quello che si era gia' chiesto al servizio.
+     *
+     * Serve quando e' l'utente a chiedere esplicitamente di aggiornare: in quel
+     * momento vuole i prezzi di adesso, non quelli che avevamo in tasca.
+     */
+    suspend fun svuotaCache()
 }
 
 /**
@@ -121,6 +129,11 @@ class RicercaImpianti(
         var ultimo = emptyList<Impianto>()
         cerca(centro, pref).collect { ultimo = it.impianti }
         return ultimo
+    }
+
+    override suspend fun svuotaCache() {
+        cache.svuota()
+        cacheDettagli.clear()
     }
 
     override suspend fun dettaglio(idImpianto: Int): DettaglioImpianto =

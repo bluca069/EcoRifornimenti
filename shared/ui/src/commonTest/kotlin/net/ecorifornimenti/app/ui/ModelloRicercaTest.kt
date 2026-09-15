@@ -68,6 +68,11 @@ private class SorgenteFinta(
     override suspend fun cercaTutto(centro: Posizione, pref: PreferenzaRicerca): List<Impianto> =
         esito(pref)
 
+    var cacheSvuotata = 0
+        private set
+
+    override suspend fun svuotaCache() { cacheSvuotata++ }
+
     override suspend fun dettaglio(idImpianto: Int): DettaglioImpianto {
         dettagliChiesti++
         erroreDettaglio?.let { throw it }
@@ -396,6 +401,72 @@ class SchedaEPreferenzeTest {
     }
 }
 
+class AggiornamentoTest {
+
+    /**
+     * Tirare giu' la lista deve rileggere i prezzi davvero: se si limitasse a
+     * ripetere la ricerca, la cache restituirebbe gli stessi numeri e il gesto
+     * sarebbe una bugia.
+     */
+    @Test
+    fun `aggiornare butta via la cache e rifa' la ricerca`() = runTest {
+        val sorgente = SorgenteFinta()
+        val m = modello(this, sorgente = sorgente)
+        m.avvia()
+        advanceUntilIdle()
+        val dopoAvvio = sorgente.ricerche
+
+        m.aggiorna()
+        advanceUntilIdle()
+
+        assertEquals(1, sorgente.cacheSvuotata)
+        assertEquals(dopoAvvio + 1, sorgente.ricerche)
+    }
+
+    @Test
+    fun `durante l'aggiornamento lo stato lo segnala, e poi smette`() = runTest {
+        val sorgente = SorgenteFinta(passi = 3)
+        val m = modello(this, sorgente = sorgente)
+        m.avvia()
+        advanceUntilIdle()
+
+        m.aggiorna()
+        assertTrue(m.stato.value.inAggiornamento, "la rotella deve comparire subito")
+
+        advanceUntilIdle()
+        assertTrue(!m.stato.value.inAggiornamento, "e sparire quando ha finito")
+        assertTrue(m.stato.value.impianti.isNotEmpty())
+    }
+
+    @Test
+    fun `aggiornare senza una posizione riparte dall'avvio`() = runTest {
+        val sorgente = SorgenteFinta()
+        val m = modello(this, sorgente = sorgente)
+
+        m.aggiorna()
+        advanceUntilIdle()
+
+        assertTrue(m.stato.value.stato is StatoSchermata.Pronta)
+        assertEquals(MILANO, m.stato.value.posizione)
+    }
+
+    @Test
+    fun `se l'aggiornamento fallisce la rotella non resta girando`() = runTest {
+        val sorgente = SorgenteFinta()
+        val m = modello(this, sorgente = sorgente)
+        m.avvia()
+        advanceUntilIdle()
+
+        val rotto = modello(this, sorgente = SorgenteFinta(errore = ErroreRicerca.TroppeRichieste))
+        rotto.avvia()
+        advanceUntilIdle()
+        rotto.aggiorna()
+        advanceUntilIdle()
+
+        assertTrue(!rotto.stato.value.inAggiornamento)
+    }
+}
+
 class SenzaReteTest {
 
     @Test
@@ -426,6 +497,7 @@ class SenzaReteTest {
 
             override suspend fun cercaTutto(centro: Posizione, pref: PreferenzaRicerca) = DUE_IMPIANTI
             override suspend fun dettaglio(idImpianto: Int) = throw ErroreRicerca.TroppeRichieste
+            override suspend fun svuotaCache() = Unit
         }
         val m = ModelloRicerca(sorgente, PosizioneFissa(MILANO), this, PreferenzeInMemoria())
         m.avvia()
@@ -450,6 +522,7 @@ class SenzaReteTest {
 
             override suspend fun cercaTutto(centro: Posizione, pref: PreferenzaRicerca) = DUE_IMPIANTI
             override suspend fun dettaglio(idImpianto: Int) = throw ErroreRicerca.TroppeRichieste
+            override suspend fun svuotaCache() = Unit
         }
         val m = ModelloRicerca(sorgente, PosizioneFissa(MILANO), this, PreferenzeInMemoria())
         m.avvia()

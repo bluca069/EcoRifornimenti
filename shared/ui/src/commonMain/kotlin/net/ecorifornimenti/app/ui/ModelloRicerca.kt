@@ -53,6 +53,8 @@ data class StatoRicerca(
     val impianti: List<Impianto> = emptyList(),
     val fasce: Map<Int, FasciaPrezzo> = emptyMap(),
     val avanzamento: Float = 0f,
+    /** L'utente ha tirato giu' la lista per rileggere i prezzi. */
+    val inAggiornamento: Boolean = false,
     val selezionato: Impianto? = null,
     val scheda: SchedaImpianto? = null,
 ) {
@@ -117,6 +119,20 @@ class ModelloRicerca(
     /** Ricerca su una posizione scelta a mano (citta' cercata, o mappa spostata). */
     fun cercaIn(posizione: Posizione) = cercaDa(posizione)
 
+    /**
+     * Rilegge i prezzi da capo, buttando via la cache: e' il gesto di chi tira giu' la
+     * lista perche' vuole sapere quanto costa *adesso*, non venti minuti fa.
+     */
+    fun aggiorna() {
+        val centro = _stato.value.posizione ?: return avvia()
+        ricercaInCorso?.cancel()
+        _stato.value = _stato.value.copy(inAggiornamento = true)
+        ricercaInCorso = scope.launch {
+            ricerca.svuotaCache()
+            eseguiRicerca(centro, _stato.value.preferenza)
+        }
+    }
+
     fun cambiaPreferenza(nuova: PreferenzaRicerca) {
         if (nuova == _stato.value.preferenza) return
         preferenze.salva(nuova)
@@ -177,25 +193,30 @@ class ModelloRicerca(
             selezionato = null,
             scheda = null,
         )
-        ricercaInCorso = scope.launch {
-            try {
-                ricerca.cerca(centro, pref).collect { passo ->
-                    _stato.value = _stato.value.copy(
-                        stato = StatoSchermata.Pronta(caricamento = !passo.completata),
-                        impianti = passo.impianti,
-                        fasce = fasce(passo.impianti, pref),
-                        avanzamento = passo.frazione,
-                    )
-                }
-            } catch (e: ErroreRicerca) {
-                // Se qualcosa era gia' sulla mappa si tiene: meglio un dato parziale
-                // che una schermata di errore al posto di una mappa funzionante.
-                _stato.value = if (_stato.value.impianti.isNotEmpty()) {
-                    _stato.value.copy(stato = StatoSchermata.Pronta(caricamento = false))
-                } else {
-                    _stato.value.copy(stato = StatoSchermata.Errore(e.message ?: "Ricerca non riuscita"))
-                }
+        ricercaInCorso = scope.launch { eseguiRicerca(centro, pref) }
+    }
+
+    private suspend fun eseguiRicerca(centro: Posizione, pref: PreferenzaRicerca) {
+        try {
+            ricerca.cerca(centro, pref).collect { passo ->
+                _stato.value = _stato.value.copy(
+                    stato = StatoSchermata.Pronta(caricamento = !passo.completata),
+                    impianti = passo.impianti,
+                    fasce = fasce(passo.impianti, pref),
+                    avanzamento = passo.frazione,
+                    inAggiornamento = !passo.completata && _stato.value.inAggiornamento,
+                )
             }
+        } catch (e: ErroreRicerca) {
+            // Se qualcosa era gia' sulla mappa si tiene: meglio un dato parziale
+            // che una schermata di errore al posto di una mappa funzionante.
+            _stato.value = if (_stato.value.impianti.isNotEmpty()) {
+                _stato.value.copy(stato = StatoSchermata.Pronta(caricamento = false))
+            } else {
+                _stato.value.copy(stato = StatoSchermata.Errore(e.message ?: "Ricerca non riuscita"))
+            }
+        } finally {
+            _stato.value = _stato.value.copy(inAggiornamento = false)
         }
     }
 

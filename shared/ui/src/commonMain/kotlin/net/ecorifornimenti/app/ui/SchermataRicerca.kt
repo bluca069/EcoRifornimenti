@@ -36,8 +36,10 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
@@ -247,6 +249,7 @@ private fun Pannello(
         ElencoRisultati(
             stato = stato,
             onSeleziona = modello::seleziona,
+            onAggiorna = modello::aggiorna,
             modifier = modifier,
             aTuttaAltezza = aTuttaAltezza,
         )
@@ -367,10 +370,12 @@ private fun ChipFiltro(selezionato: Boolean, etichetta: String, onClick: () -> U
  * I risultati in fondo allo schermo, ordinati dal piu' conveniente.
  * Toccarne uno lo seleziona sulla mappa, e viceversa.
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ElencoRisultati(
     stato: StatoRicerca,
     onSeleziona: (Impianto?) -> Unit,
+    onAggiorna: () -> Unit,
     modifier: Modifier = Modifier,
     /** Nella colonna laterale la classifica puo' scorrere per tutta l'altezza. */
     aTuttaAltezza: Boolean = false,
@@ -397,10 +402,18 @@ private fun ElencoRisultati(
         LaunchedEffect(stato.migliore?.id) {
             if (stato.impianti.isNotEmpty()) scorrimento.scrollToItem(0)
         }
-        LazyColumn(
-            state = scorrimento,
+        // Tirare giu' la classifica rilegge i prezzi, buttando via la cache: e' il
+        // gesto che tutti si aspettano su una lista, e qui ha un senso vero, perche'
+        // i risultati restano in tasca per venti minuti.
+        PullToRefreshBox(
+            isRefreshing = stato.inAggiornamento,
+            onRefresh = onAggiorna,
             modifier = if (aTuttaAltezza) Modifier.fillMaxHeight()
                 else Modifier.heightIn(max = 260.dp),
+        ) {
+        LazyColumn(
+            state = scorrimento,
+            modifier = Modifier.fillMaxSize(),
         ) {
             val prezzoMigliore = stato.migliore?.prezzoPer(stato.preferenza)?.prezzo
             itemsIndexed(stato.impianti, key = { _, imp -> imp.id }) { posizione, impianto ->
@@ -420,6 +433,7 @@ private fun ElencoRisultati(
                     )
                 }
             }
+        }
         }
     }
 }
