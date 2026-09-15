@@ -33,6 +33,7 @@ internal fun PrezzoDto.toModel(): PrezzoCarburante? {
         nome = name?.trim().orEmpty(),
         prezzo = p,
         self = isSelf,
+        comunicatoIso = insertDate,
     )
 }
 

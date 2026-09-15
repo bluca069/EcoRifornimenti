@@ -45,6 +45,8 @@ kotlin {
             implementation(compose.ui)
             implementation(compose.materialIconsExtended)
             implementation(libs.kotlinx.coroutines.core)
+            // Le date dei prezzi arrivano in UTC: vanno portate nel fuso di chi guarda.
+            implementation(libs.kotlinx.datetime)
         }
         androidMain.dependencies {
             implementation(libs.androidx.activity.compose)

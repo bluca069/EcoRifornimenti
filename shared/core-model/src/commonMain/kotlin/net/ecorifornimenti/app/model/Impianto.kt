@@ -12,6 +12,12 @@ data class PrezzoCarburante(
     val nome: String,
     val prezzo: Double,
     val self: Boolean,
+    /**
+     * Quando il gestore ha comunicato questo prezzo, in ISO 8601 e in UTC come lo
+     * manda il servizio. Serve a dire all'utente quanto e' fresco il dato: un prezzo
+     * di tre giorni fa e' un'informazione diversa da uno di stamattina.
+     */
+    val comunicatoIso: String? = null,
 )
 
 /**

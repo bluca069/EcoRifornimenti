@@ -115,6 +115,19 @@ fun SchedaImpiantoUi(
                 }
             }
 
+            // Quando il gestore ha comunicato i prezzi: senza questa riga non c'e' modo
+            // di sapere se il numero sopra e' di stamattina o della settimana scorsa.
+            val comunicazione = formattaComunicazione(
+                ultimaComunicazione(prezzi.map { it.comunicatoIso } + impianto.comunicatoIso)
+            )
+            if (comunicazione != null) {
+                Text(
+                    text = "Prezzi comunicati il $comunicazione",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+
             if (dettaglio != null) {
                 if (dettaglio.servizi.isNotEmpty()) {
                     Text(

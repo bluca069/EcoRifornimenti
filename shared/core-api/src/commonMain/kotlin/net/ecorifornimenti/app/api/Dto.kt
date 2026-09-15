@@ -46,6 +46,8 @@ internal data class PrezzoDto(
     val name: String? = null,
     val price: Double? = null,
     val isSelf: Boolean = false,
+    /** Presente nel dettaglio, assente nella ricerca per zona. */
+    val insertDate: String? = null,
 )
 
 @Serializable
