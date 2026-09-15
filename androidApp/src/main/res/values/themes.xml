@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Il tema vero e' quello di Compose: qui basta un contenitore senza ActionBar. -->
+    <style name="Theme.EcoRifornimenti" parent="android:Theme.Material.Light.NoActionBar" />
+</resources>

@@ -1,0 +1,23 @@
+PODS:
+  - EcoRifornimentiKit (0.1.0):
+    - MapLibre (= 6.30.0)
+  - MapLibre (6.30.0)
+
+DEPENDENCIES:
+  - EcoRifornimentiKit (from `../shared/ui`)
+
+SPEC REPOS:
+  trunk:
+    - MapLibre
+
+EXTERNAL SOURCES:
+  EcoRifornimentiKit:
+    :path: "../shared/ui"
+
+SPEC CHECKSUMS:
+  EcoRifornimentiKit: 154d3679ef56ee5ac33178f139f013e649c75353
+  MapLibre: 0612a7bd22d9e025c2aafa87bbea4f4685a1b15b
+
+PODFILE CHECKSUM: bc691de8e68355aeb124e86ad5107271022cb298
+
+COCOAPODS: 1.17.0

@@ -1,0 +1,9 @@
+platform :ios, '15.0'
+
+target 'iosApp' do
+  use_frameworks!
+  # Il modulo condiviso Kotlin: schermata, ricerca, modelli e mappa sono gli stessi
+  # di Android. Il suo podspec si porta dietro MapLibre come dipendenza, quindi non
+  # va dichiarato qui, e il framework lo costruisce Gradle in fase di compilazione.
+  pod 'EcoRifornimentiKit', :path => '../shared/ui'
+end

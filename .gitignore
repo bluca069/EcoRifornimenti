@@ -1,0 +1,17 @@
+# Gradle e build
+.gradle/
+build/
+local.properties
+
+# IDE
+.idea/
+*.iml
+.DS_Store
+
+# CocoaPods: le dipendenze si riscaricano con `pod install`
+iosApp/Pods/
+iosApp/iosApp.xcworkspace/
+**/xcuserdata/
+
+# Generato da Gradle a ogni `podspec`/sync
+shared/ui/EcoRifornimentiKit.podspec
