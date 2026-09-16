@@ -71,3 +71,28 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 }
+
+/**
+ * Il plugin CocoaPods di Kotlin genera un Podfile "sintetico" il cui `post_install`
+ * alza il deployment target dei pod a **12.0** (KT-57741). Xcode 26 accetta solo da
+ * 15.0 in su, quindi la compilazione di MapLibre falliva prima ancora di iniziare:
+ * "deployment target is set to 12.0, but the range of supported versions is 15.0...".
+ *
+ * Qui si riscrive quel blocco perche' la soglia sia la nostra (15.0, la stessa
+ * dichiarata in `cocoapods { ios.deploymentTarget }`), subito dopo che il Podfile e'
+ * stato generato e prima che CocoaPods lo usi.
+ */
+tasks.matching { it.name == "podGenIos" }.configureEach {
+    // Il percorso si risolve qui, non dentro doLast: cosi' l'azione non si porta
+    // dietro il Project, che la configuration cache non sa serializzare.
+    val podfile = layout.buildDirectory.file("cocoapods/synthetic/ios/Podfile").get().asFile
+    doLast {
+        if (!podfile.exists()) return@doLast
+        val testo = podfile.readText()
+        val corretto = testo
+            .replace("deployment_target_major < 12", "deployment_target_major < 15")
+            .replace("deployment_target_major == 12", "deployment_target_major == 15")
+            .replace("version = \"#{12}.#{0}\"", "version = \"#{15}.#{0}\"")
+        if (corretto != testo) podfile.writeText(corretto)
+    }
+}
