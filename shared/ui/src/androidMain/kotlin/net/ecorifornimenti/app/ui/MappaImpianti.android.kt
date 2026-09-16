@@ -11,6 +11,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
+import net.ecorifornimenti.app.geo.distanzaKm
 import net.ecorifornimenti.app.model.FasciaPrezzo
 import net.ecorifornimenti.app.model.Impianto
 import net.ecorifornimenti.app.model.Posizione
@@ -43,6 +44,7 @@ actual fun MappaImpianti(
     preferenza: PreferenzaRicerca,
     selezionato: Impianto?,
     onSeleziona: (Impianto?) -> Unit,
+    richiesteRicentro: Int,
     modifier: Modifier,
 ) {
     val contesto = LocalContext.current
@@ -79,14 +81,16 @@ actual fun MappaImpianti(
                         mappa.addOnMapClickListener { onSeleziona(null); false }
                         mappa.uiSettings.isRotateGesturesEnabled = false
                         mappa.uiSettings.setAttributionMargins(16, 0, 0, 16)
-                        stato.disegna(centro, raggioKm, impianti, fasce, preferenza, selezionato)
+                        stato.disegna(centro, raggioKm, impianti, fasce, preferenza, selezionato, richiesteRicentro)
                     }
                 }
                 vista.onStart()
                 vista.onResume()
             }
         },
-        update = { stato.disegna(centro, raggioKm, impianti, fasce, preferenza, selezionato) },
+        update = {
+            stato.disegna(centro, raggioKm, impianti, fasce, preferenza, selezionato, richiesteRicentro)
+        },
     )
 
     DisposableEffect(Unit) {
@@ -111,7 +115,9 @@ private class StatoMappa {
     val perSimbolo = mutableMapOf<Long, Impianto>()
     private var disegnati: List<Int> = emptyList()
     private var iconeCaricate = mutableSetOf<String>()
-    private var inquadraturaFatta = false
+    /** L'ultimo centro su cui si e' inquadrata la mappa. */
+    private var ultimoCentro: Posizione? = null
+    private var ultimoRicentro = 0
     private var ultimaSelezione: Int? = null
 
     fun disegna(
@@ -121,6 +127,7 @@ private class StatoMappa {
         fasce: Map<Int, FasciaPrezzo>,
         preferenza: PreferenzaRicerca,
         selezionato: Impianto?,
+        richiesteRicentro: Int,
     ) {
         val mappa = mappa ?: return
         val gestore = gestore ?: return
@@ -162,11 +169,25 @@ private class StatoMappa {
             ultimaSelezione = selezionato?.id
         }
 
-        // L'inquadratura si imposta una volta sola: dopo comanda l'utente, e una mappa
-        // che si ricentra da sola mentre si sta guardando altrove e' insopportabile.
-        if (!inquadraturaFatta) {
-            inquadraturaFatta = true
-            mappa.moveCamera(CameraUpdateFactory.newLatLngBounds(riquadro(centro, raggioKm), 80))
+        // Di norma l'inquadratura si imposta una volta sola: dopo comanda l'utente, e
+        // una mappa che si ricentra da sola mentre la si sta guardando e'
+        // insopportabile. Ma se il centro cambia — ci si e' spostati, o si e' chiesto
+        // un aggiornamento da un altro posto — la mappa deve seguire, altrimenti
+        // mostrerebbe i distributori di dove si era prima.
+        val centroCambiato = ultimoCentro?.let { distanzaKm(it, centro) > SPOSTAMENTO_MAPPA_KM } ?: true
+        // Un aggiornamento chiesto dall'utente riporta sempre la vista sulla posizione
+        // GPS, anche se il centro e' lo stesso: nel frattempo puo' aver trascinato la
+        // mappa altrove, e "aggiorna" deve rispondere alla domanda "dove sono adesso".
+        val ricentroChiesto = richiesteRicentro != ultimoRicentro
+        if (centroCambiato || ricentroChiesto) {
+            ultimoRicentro = richiesteRicentro
+            val inquadratura = CameraUpdateFactory.newLatLngBounds(riquadro(centro, raggioKm), 80)
+            // La prima volta si salta subito al posto giusto; gli spostamenti
+            // successivi si animano, cosi' si capisce che la mappa si e' mossa e
+            // perche' — un salto secco sembrerebbe un errore.
+            if (ultimoCentro == null) mappa.moveCamera(inquadratura)
+            else mappa.animateCamera(inquadratura)
+            ultimoCentro = centro
         }
     }
 
@@ -184,6 +205,14 @@ private class StatoMappa {
      * Il nome dell'icona e' la sua descrizione: stesso prezzo e stessa fascia = stessa
      * immagine, generata una volta e riusata da tutti i distributori che la condividono.
      */
+    private companion object {
+        /**
+         * Quanto deve spostarsi il centro perche' valga la pena ricentrare: sotto i
+         * 300 metri il movimento della mappa darebbe piu' fastidio che informazione.
+         */
+        const val SPOSTAMENTO_MAPPA_KM = 0.3
+    }
+
     private fun nomeIcona(
         prezzo: Double,
         fascia: FasciaPrezzo?,

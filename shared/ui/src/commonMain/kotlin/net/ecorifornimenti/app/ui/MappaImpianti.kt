@@ -14,6 +14,7 @@ import net.ecorifornimenti.app.model.PreferenzaRicerca
  * @param centro dove si trova l'utente: la mappa ci si centra e ci disegna il puntino.
  * @param raggioKm l'area cercata, disegnata come cerchio per far capire il perimetro.
  * @param fasce colore di ogni marker, gia' calcolato: qui non si decide nulla.
+ * @param richiesteRicentro contatore che cresce a ogni aggiornamento chiesto dall'utente.
  */
 @Composable
 expect fun MappaImpianti(
@@ -24,6 +25,11 @@ expect fun MappaImpianti(
     preferenza: PreferenzaRicerca,
     selezionato: Impianto?,
     onSeleziona: (Impianto?) -> Unit,
+    /**
+     * Cambia quando l'utente chiede un aggiornamento: la mappa torna sulla posizione
+     * GPS anche se nel frattempo aveva trascinato la vista altrove.
+     */
+    richiesteRicentro: Int,
     modifier: Modifier = Modifier,
 )
 

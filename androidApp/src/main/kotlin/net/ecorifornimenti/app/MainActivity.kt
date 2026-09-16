@@ -16,6 +16,7 @@ import net.ecorifornimenti.app.api.osservaprezziClient
 import net.ecorifornimenti.app.geo.PosizioneAndroid
 import net.ecorifornimenti.app.ui.ModelloRicerca
 import net.ecorifornimenti.app.ui.PreferenzeAndroid
+import net.ecorifornimenti.app.ui.impostaVersioneApp
 import net.ecorifornimenti.app.ui.SchermataRicerca
 
 /**
@@ -40,6 +41,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        impostaVersioneApp(BuildConfig.VERSION_NAME, BuildConfig.VERSION_CODE)
         client = osservaprezziClient()
         val posizioni = PosizioneAndroid(applicationContext)
         modello = ModelloRicerca(
@@ -64,6 +66,24 @@ class MainActivity : ComponentActivity() {
             )
         }
     }
+
+    /**
+     * Tornando all'app si ricontrolla dove siamo: chi la riapre spesso l'ha chiusa in
+     * un posto e riaperta in un altro. Se non ci si e' spostati non succede nulla.
+     *
+     * Il primo `onResume` arriva subito dopo `onCreate`, che ha gia' avviato la
+     * ricerca: saltarlo evita di chiedere due volte la stessa cosa al servizio.
+     */
+    override fun onResume() {
+        super.onResume()
+        if (primoAvvio) {
+            primoAvvio = false
+            return
+        }
+        modello.alRientro()
+    }
+
+    private var primoAvvio = true
 
     override fun onDestroy() {
         client.chiudi()

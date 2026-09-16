@@ -15,6 +15,7 @@ import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.useContents
 import kotlinx.cinterop.ObjCSignatureOverride
 import kotlinx.cinterop.readValue
+import net.ecorifornimenti.app.geo.distanzaKm
 import net.ecorifornimenti.app.model.FasciaPrezzo
 import net.ecorifornimenti.app.model.Impianto
 import net.ecorifornimenti.app.model.Posizione
@@ -41,6 +42,7 @@ actual fun MappaImpianti(
     preferenza: PreferenzaRicerca,
     selezionato: Impianto?,
     onSeleziona: (Impianto?) -> Unit,
+    richiesteRicentro: Int,
     modifier: Modifier,
 ) {
     val stato = remember { StatoMappaIos() }
@@ -56,7 +58,9 @@ actual fun MappaImpianti(
                 stato.mappa = this
             }
         },
-        update = { stato.disegna(impianti, fasce, preferenza, selezionato, centro, raggioKm) },
+        update = {
+            stato.disegna(impianti, fasce, preferenza, selezionato, centro, raggioKm, richiesteRicentro)
+        },
     )
 }
 
@@ -70,7 +74,9 @@ private class StatoMappaIos {
     var onSeleziona: (Impianto?) -> Unit = {}
     private var disegnati: List<Int> = emptyList()
     private var ultimaSelezione: Int? = null
-    private var inquadrata = false
+    /** L'ultimo centro su cui si e' inquadrata la mappa. */
+    private var ultimoCentro: Posizione? = null
+    private var ultimoRicentro = 0
 
     /**
      * Il delegato fa due cose: da' a ogni annotazione la sua immagine (targhetta o
@@ -115,9 +121,10 @@ private class StatoMappaIos {
         selezionato: Impianto?,
         centro: Posizione,
         raggioKm: Int,
+        richiesteRicentro: Int,
     ) {
         val mappa = mappa ?: return
-        inquadra(mappa, centro, raggioKm)
+        inquadra(mappa, centro, raggioKm, richiesteRicentro)
         val idOra = impianti.map { it.id }
         if (idOra == disegnati && selezionato?.id == ultimaSelezione) return
 
@@ -145,18 +152,41 @@ private class StatoMappaIos {
     }
 
     /**
-     * Inquadra l'area cercata, una volta sola e solo quando la vista ha una dimensione:
-     * calcolata su un riquadro di larghezza zero — com'e' appena creata — MapLibre
-     * produce uno zoom che mostra mezza regione.
-     * Dopo la prima volta comanda l'utente: una mappa che si ricentra da sola mentre
-     * la si sta guardando e' insopportabile.
+     * Inquadra l'area cercata. Si aspetta che la vista abbia una dimensione: calcolata
+     * su un riquadro di larghezza zero — com'e' appena creata — MapLibre produce uno
+     * zoom che mostra mezza regione.
+     *
+     * Dopo la prima volta comanda l'utente, tranne quando il centro cambia davvero:
+     * se ci si e' spostati, o si e' chiesto un aggiornamento da un altro posto, la
+     * mappa deve seguire, altrimenti mostrerebbe i distributori di dove si era prima.
      */
-    private fun inquadra(mappa: MLNMapView, centro: Posizione, raggioKm: Int) {
-        if (inquadrata) return
+    private fun inquadra(
+        mappa: MLNMapView,
+        centro: Posizione,
+        raggioKm: Int,
+        richiesteRicentro: Int,
+    ) {
+        val precedente = ultimoCentro
+        // Un aggiornamento chiesto dall'utente riporta sempre la vista sulla posizione
+        // GPS, anche se il centro e' lo stesso: nel frattempo puo' aver trascinato la
+        // mappa altrove.
+        val ricentroChiesto = richiesteRicentro != ultimoRicentro
+        ultimoRicentro = richiesteRicentro
+        if (!ricentroChiesto && precedente != null &&
+            distanzaKm(precedente, centro) <= SPOSTAMENTO_MAPPA_KM
+        ) return
         val larghezza = mappa.bounds.useContents { size.width }
         if (larghezza <= 0.0) return
-        mappa.setVisibleCoordinateBounds(riquadro(centro, raggioKm), animated = false)
-        inquadrata = true
+        mappa.setVisibleCoordinateBounds(riquadro(centro, raggioKm), animated = precedente != null)
+        ultimoCentro = centro
+    }
+
+    private companion object {
+        /**
+         * Quanto deve spostarsi il centro perche' valga la pena ricentrare: sotto i
+         * 300 metri il movimento darebbe piu' fastidio che informazione.
+         */
+        const val SPOSTAMENTO_MAPPA_KM = 0.3
     }
 }
 

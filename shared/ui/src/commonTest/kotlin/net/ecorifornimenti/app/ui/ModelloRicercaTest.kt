@@ -467,6 +467,144 @@ class AggiornamentoTest {
     }
 }
 
+/** Provider che si puo' spostare fra una lettura e l'altra, come un telefono vero. */
+private class PosizioneMobile(iniziale: Posizione) : ProviderPosizione {
+    var attuale: Posizione = iniziale
+    var letture = 0
+        private set
+
+    override fun permessoConcesso() = true
+    override suspend fun posizioneCorrente(): Posizione {
+        letture++
+        return attuale
+    }
+}
+
+class PosizioneCheCambiaTest {
+
+    @Test
+    fun `al rientro nell'app, se ci si e' spostati si rifa' la ricerca`() = runTest {
+        val posizioni = PosizioneMobile(MILANO)
+        val sorgente = SorgenteFinta()
+        val m = ModelloRicerca(sorgente, posizioni, this, PreferenzeInMemoria())
+        m.avvia()
+        advanceUntilIdle()
+        val dopoAvvio = sorgente.ricerche
+
+        // Tre chilometri piu' in la': i distributori vicini non sono piu' gli stessi.
+        posizioni.attuale = Posizione(MILANO.lat + 0.027, MILANO.lng)
+        m.alRientro()
+        advanceUntilIdle()
+
+        assertEquals(dopoAvvio + 1, sorgente.ricerche)
+        assertEquals(posizioni.attuale, m.stato.value.posizione, "la mappa deve seguire")
+    }
+
+    @Test
+    fun `al rientro, se non ci si e' mossi non si chiede nulla al servizio`() = runTest {
+        val posizioni = PosizioneMobile(MILANO)
+        val sorgente = SorgenteFinta()
+        val m = ModelloRicerca(sorgente, posizioni, this, PreferenzeInMemoria())
+        m.avvia()
+        advanceUntilIdle()
+        val dopoAvvio = sorgente.ricerche
+
+        // Cento metri: riaprire l'app da fermi non deve costare una raffica di chiamate.
+        posizioni.attuale = Posizione(MILANO.lat + 0.0009, MILANO.lng)
+        m.alRientro()
+        advanceUntilIdle()
+
+        assertEquals(dopoAvvio, sorgente.ricerche)
+        assertEquals(MILANO, m.stato.value.posizione)
+    }
+
+    @Test
+    fun `aggiornando si rilegge anche la posizione`() = runTest {
+        val posizioni = PosizioneMobile(MILANO)
+        val sorgente = SorgenteFinta()
+        val m = ModelloRicerca(sorgente, posizioni, this, PreferenzeInMemoria())
+        m.avvia()
+        advanceUntilIdle()
+
+        val altrove = Posizione(MILANO.lat + 0.05, MILANO.lng)
+        posizioni.attuale = altrove
+        m.aggiorna()
+        advanceUntilIdle()
+
+        assertEquals(altrove, m.stato.value.posizione, "chi aggiorna spesso e' in movimento")
+        assertEquals(1, sorgente.cacheSvuotata)
+    }
+
+    @Test
+    fun `ogni aggiornamento chiede alla mappa di tornare sulla posizione`() = runTest {
+        val m = modello(this)
+        m.avvia()
+        advanceUntilIdle()
+        val prima = m.stato.value.richiesteRicentro
+
+        m.aggiorna()
+        advanceUntilIdle()
+
+        // Anche da fermi: l'utente puo' aver trascinato la mappa altrove, e
+        // "aggiorna" deve rispondere alla domanda "dove sono adesso".
+        assertEquals(prima + 1, m.stato.value.richiesteRicentro)
+    }
+
+    @Test
+    fun `cambiare carburante non fa saltare la vista della mappa`() = runTest {
+        val m = modello(this)
+        m.avvia()
+        advanceUntilIdle()
+        val prima = m.stato.value.richiesteRicentro
+
+        m.cambiaPreferenza(m.stato.value.preferenza.copy(tipo = TipoCarburante.GASOLIO))
+        advanceUntilIdle()
+
+        assertEquals(prima, m.stato.value.richiesteRicentro)
+    }
+
+    @Test
+    fun `aggiornando da fermi il centro non si muove`() = runTest {
+        val posizioni = PosizioneMobile(MILANO)
+        val m = ModelloRicerca(SorgenteFinta(), posizioni, this, PreferenzeInMemoria())
+        m.avvia()
+        advanceUntilIdle()
+
+        posizioni.attuale = Posizione(MILANO.lat + 0.001, MILANO.lng)
+        m.aggiorna()
+        advanceUntilIdle()
+
+        assertEquals(MILANO, m.stato.value.posizione)
+    }
+
+    @Test
+    fun `senza permesso il rientro non fa nulla`() = runTest {
+        val sorgente = SorgenteFinta()
+        val m = modello(this, posizioni = PosizioneFissa(MILANO, concesso = false), sorgente = sorgente)
+
+        m.alRientro()
+        advanceUntilIdle()
+
+        // Niente ricerche e niente cambi di stato: al permesso ci pensa `avvia`, che
+        // e' il punto in cui l'app sa spiegare all'utente cosa manca.
+        assertEquals(0, sorgente.ricerche)
+        assertTrue(m.stato.value.stato is StatoSchermata.Iniziale)
+    }
+
+    @Test
+    fun `il rientro prima che la schermata sia pronta non interferisce`() = runTest {
+        val sorgente = SorgenteFinta()
+        val m = modello(this, sorgente = sorgente)
+
+        // L'app e' appena partita e sta ancora cercando la posizione: un rientro qui
+        // non deve accodare una seconda ricerca sopra quella in corso.
+        m.alRientro()
+        advanceUntilIdle()
+
+        assertEquals(0, sorgente.ricerche)
+    }
+}
+
 class SenzaReteTest {
 
     @Test

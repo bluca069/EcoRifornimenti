@@ -55,6 +55,14 @@ data class StatoRicerca(
     val avanzamento: Float = 0f,
     /** L'utente ha tirato giu' la lista per rileggere i prezzi. */
     val inAggiornamento: Boolean = false,
+    /**
+     * Cresce a ogni richiesta esplicita di aggiornamento.
+     *
+     * La mappa lo guarda per sapere che deve tornare sulla posizione GPS: di solito si
+     * ricentra solo se il centro cambia, ma chi aggiorna vuole rivedere dove si trova
+     * anche se nel frattempo aveva trascinato la vista altrove.
+     */
+    val richiesteRicentro: Int = 0,
     val selezionato: Impianto? = null,
     val scheda: SchedaImpianto? = null,
 ) {
@@ -122,15 +130,49 @@ class ModelloRicerca(
     /**
      * Rilegge i prezzi da capo, buttando via la cache: e' il gesto di chi tira giu' la
      * lista perche' vuole sapere quanto costa *adesso*, non venti minuti fa.
+     *
+     * Insieme ai prezzi rilegge anche **dove si trova**: chi aggiorna spesso lo fa
+     * mentre e' in movimento, e aggiornare i prezzi di dove si era prima non
+     * servirebbe a nulla.
      */
     fun aggiorna() {
-        val centro = _stato.value.posizione ?: return avvia()
+        if (_stato.value.posizione == null) return avvia()
         ricercaInCorso?.cancel()
-        _stato.value = _stato.value.copy(inAggiornamento = true)
+        _stato.value = _stato.value.copy(
+            inAggiornamento = true,
+            richiesteRicentro = _stato.value.richiesteRicentro + 1,
+        )
         ricercaInCorso = scope.launch {
             ricerca.svuotaCache()
+            val centro = posizioneAggiornata() ?: _stato.value.posizione ?: return@launch
+            _stato.value = _stato.value.copy(posizione = centro)
             eseguiRicerca(centro, _stato.value.preferenza)
         }
+    }
+
+    /**
+     * Da chiamare quando l'app torna in primo piano.
+     *
+     * Chi la riapre spesso l'ha chiusa in un posto e riaperta in un altro: se ci si e'
+     * spostati si rifa' la ricerca e la mappa segue, altrimenti non si tocca nulla —
+     * riaprire l'app non deve costare una raffica di chiamate al servizio per niente.
+     */
+    fun alRientro() {
+        if (!posizioni.permessoConcesso()) return
+        if (_stato.value.stato !is StatoSchermata.Pronta) return
+        scope.launch {
+            val precedente = _stato.value.posizione ?: return@launch
+            val attuale = posizioni.posizioneCorrente() ?: return@launch
+            if (distanteDa(precedente, attuale)) cercaDa(attuale)
+        }
+    }
+
+    /** La posizione di adesso, se e' cambiata abbastanza da contare. */
+    private suspend fun posizioneAggiornata(): Posizione? {
+        if (!posizioni.permessoConcesso()) return null
+        val attuale = posizioni.posizioneCorrente() ?: return null
+        val precedente = _stato.value.posizione
+        return if (precedente == null || distanteDa(precedente, attuale)) attuale else precedente
     }
 
     fun cambiaPreferenza(nuova: PreferenzaRicerca) {
@@ -226,8 +268,10 @@ class ModelloRicerca(
     private companion object {
         /**
          * Sotto questa soglia rifare la ricerca non cambierebbe la classifica: si
-         * evita una seconda raffica di chiamate per pochi metri di scarto.
+         * evita una raffica di chiamate per pochi metri di scarto. Mezzo chilometro
+         * e' il punto in cui le distanze mostrate iniziano a essere sbagliate per chi
+         * cammina o guida.
          */
-        const val SPOSTAMENTO_SIGNIFICATIVO_KM = 1.0
+        const val SPOSTAMENTO_SIGNIFICATIVO_KM = 0.5
     }
 }

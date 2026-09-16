@@ -8,6 +8,9 @@ import kotlinx.coroutines.SupervisorJob
 import net.ecorifornimenti.app.api.RicercaImpianti
 import net.ecorifornimenti.app.api.osservaprezziClient
 import net.ecorifornimenti.app.geo.PosizioneIos
+import platform.Foundation.NSNotificationCenter
+import platform.Foundation.NSOperationQueue
+import platform.UIKit.UIApplicationDidBecomeActiveNotification
 import platform.UIKit.UIViewController
 
 /**
@@ -29,6 +32,14 @@ fun MainViewController(): UIViewController {
     // quando l'utente ha risposto. Se era gia' concesso si parte subito.
     posizioni.chiediPermesso(alCambio = { modello.avvia() })
     if (posizioni.permessoConcesso()) modello.avvia()
+
+    // Tornando all'app si ricontrolla dove siamo: se ci si e' spostati la ricerca si
+    // rifa' e la mappa segue, altrimenti non succede nulla.
+    NSNotificationCenter.defaultCenter.addObserverForName(
+        name = UIApplicationDidBecomeActiveNotification,
+        `object` = null,
+        queue = NSOperationQueue.mainQueue,
+    ) { _ -> modello.alRientro() }
     return ComposeUIViewController {
         MaterialTheme { SchermataRicerca(modello) }
     }

@@ -213,6 +213,7 @@ private fun Mappa(stato: StatoRicerca, modello: ModelloRicerca, modifier: Modifi
         preferenza = stato.preferenza,
         selezionato = stato.selezionato,
         onSeleziona = modello::seleziona,
+        richiesteRicentro = stato.richiesteRicentro,
         modifier = modifier,
     )
 }
@@ -347,6 +348,16 @@ private fun ImpostazioniRicerca(
                             "Oltre i 10 km i distributori più lontani compaiono poco per volta."
                         },
                         style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                // Serve a chi segnala un problema: la prima domanda e' sempre "che
+                // versione hai?", e qui e' l'unico posto dove guardare.
+                val versione = versioneApp()
+                if (versione.isNotEmpty()) {
+                    Text(
+                        text = "EcoRifornimenti $versione · dati Osservaprezzi MIMIT",
+                        style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
