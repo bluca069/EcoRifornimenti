@@ -48,3 +48,11 @@ object CodificaPreferenze {
         )
     }
 }
+
+/**
+ * La versione dell'app, per mostrarla nelle impostazioni.
+ *
+ * La dichiara la piattaforma: su Android sta nel `BuildConfig`, su iOS nell'Info.plist,
+ * e il modulo comune non conosce ne' l'uno ne' l'altro.
+ */
+expect fun versioneApp(): String
