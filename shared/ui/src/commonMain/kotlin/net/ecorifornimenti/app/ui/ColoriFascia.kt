@@ -23,6 +23,13 @@ object ColoriFascia {
      */
     val selezionato = Color(0xFF1A4FA0)
 
+    /**
+     * Il puntino di dove si trova l'utente. E' l'azzurro che tutti associano alla
+     * propria posizione sulle mappe: usarne un altro costringerebbe a chiedersi cosa
+     * sia quel punto.
+     */
+    val posizione = Color(0xFF1A73E8)
+
     operator fun get(fascia: FasciaPrezzo?): Color = when (fascia) {
         FasciaPrezzo.CONVENIENTE -> conveniente
         FasciaPrezzo.CARO -> caro

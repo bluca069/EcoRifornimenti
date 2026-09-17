@@ -38,6 +38,7 @@ import org.maplibre.android.plugins.annotation.SymbolOptions
 @Composable
 actual fun MappaImpianti(
     centro: Posizione,
+    posizioneGps: Posizione?,
     raggioKm: Int,
     impianti: List<Impianto>,
     fasce: Map<Int, FasciaPrezzo>,
@@ -45,6 +46,7 @@ actual fun MappaImpianti(
     selezionato: Impianto?,
     onSeleziona: (Impianto?) -> Unit,
     richiesteRicentro: Int,
+    onSpostataDallUtente: (Posizione) -> Unit,
     modifier: Modifier,
 ) {
     val contesto = LocalContext.current
@@ -53,6 +55,7 @@ actual fun MappaImpianti(
     remember { MapLibre.getInstance(contesto) }
 
     val stato = remember { StatoMappa() }
+    stato.onSpostataDallUtente = onSpostataDallUtente
 
     AndroidView(
         modifier = modifier,
@@ -80,8 +83,22 @@ actual fun MappaImpianti(
                         // Un tocco sulla mappa nuda chiude la scheda aperta.
                         mappa.addOnMapClickListener { onSeleziona(null); false }
                         mappa.uiSettings.isRotateGesturesEnabled = false
+                        // Si distingue il trascinamento dell'utente dai movimenti che
+                        // decide l'app: solo il primo fa comparire "Cerca in questa zona".
+                        mappa.addOnCameraMoveStartedListener { motivo ->
+                            stato.mossaDallUtente =
+                                motivo == MapLibreMap.OnCameraMoveStartedListener.REASON_API_GESTURE
+                        }
+                        mappa.addOnCameraIdleListener {
+                            if (!stato.mossaDallUtente) return@addOnCameraIdleListener
+                            stato.mossaDallUtente = false
+                            val bersaglio = mappa.cameraPosition.target ?: return@addOnCameraIdleListener
+                            stato.onSpostataDallUtente(
+                                Posizione(bersaglio.latitude, bersaglio.longitude)
+                            )
+                        }
                         mappa.uiSettings.setAttributionMargins(16, 0, 0, 16)
-                        stato.disegna(centro, raggioKm, impianti, fasce, preferenza, selezionato, richiesteRicentro)
+                        stato.disegna(centro, posizioneGps, raggioKm, impianti, fasce, preferenza, selezionato, richiesteRicentro)
                     }
                 }
                 vista.onStart()
@@ -89,7 +106,7 @@ actual fun MappaImpianti(
             }
         },
         update = {
-            stato.disegna(centro, raggioKm, impianti, fasce, preferenza, selezionato, richiesteRicentro)
+            stato.disegna(centro, posizioneGps, raggioKm, impianti, fasce, preferenza, selezionato, richiesteRicentro)
         },
     )
 
@@ -112,16 +129,22 @@ private class StatoMappa {
     var mappa: MapLibreMap? = null
     var gestore: SymbolManager? = null
 
+    /** Dove l'utente ha portato la mappa, per proporgli di cercare li'. */
+    var onSpostataDallUtente: (Posizione) -> Unit = {}
+    var mossaDallUtente = false
+
     val perSimbolo = mutableMapOf<Long, Impianto>()
     private var disegnati: List<Int> = emptyList()
     private var iconeCaricate = mutableSetOf<String>()
     /** L'ultimo centro su cui si e' inquadrata la mappa. */
     private var ultimoCentro: Posizione? = null
     private var ultimoRicentro = 0
+    private var ultimaGps: Posizione? = null
     private var ultimaSelezione: Int? = null
 
     fun disegna(
         centro: Posizione,
+        posizioneGps: Posizione?,
         raggioKm: Int,
         impianti: List<Impianto>,
         fasce: Map<Int, FasciaPrezzo>,
@@ -134,9 +157,26 @@ private class StatoMappa {
         val stile = mappa.style ?: return
 
         val idOra = impianti.map { it.id }
-        if (idOra != disegnati || selezionato?.id != ultimaSelezione) {
+        if (idOra != disegnati || selezionato?.id != ultimaSelezione || posizioneGps != ultimaGps) {
+            ultimaGps = posizioneGps
             gestore.deleteAll()
             perSimbolo.clear()
+            // Dove si trova l'utente, disegnato per primo e con la chiave piu' bassa:
+            // e' il riferimento rispetto a cui si leggono tutte le distanze, e non deve
+            // sparire per far posto a una targhetta.
+            if (posizioneGps != null) {
+                if (iconeCaricate.add(ICONA_POSIZIONE)) {
+                    stile.addImage(ICONA_POSIZIONE, puntoPosizione())
+                }
+                gestore.create(
+                    SymbolOptions()
+                        .withLatLng(LatLng(posizioneGps.lat, posizioneGps.lng))
+                        .withIconImage(ICONA_POSIZIONE)
+                        .withIconAnchor("center")
+                        .withSymbolSortKey(-2f)
+                )
+            }
+
             val conTarghetta = impiantiConTarghetta(impianti, raggioKm)
             impianti.forEach { impianto ->
                 val prezzo = impianto.prezzoPer(preferenza) ?: return@forEach
@@ -211,6 +251,7 @@ private class StatoMappa {
          * 300 metri il movimento della mappa darebbe piu' fastidio che informazione.
          */
         const val SPOSTAMENTO_MAPPA_KM = 0.3
+        const val ICONA_POSIZIONE = "posizione_utente"
     }
 
     private fun nomeIcona(
@@ -223,6 +264,33 @@ private class StatoMappa {
         else "d_${fascia ?: "x"}"
 
 
+}
+
+/**
+ * Il punto della posizione corrente: cerchio azzurro, anello bianco e un alone chiaro
+ * attorno, cosi' resta visibile anche sopra le strade gialle della mappa.
+ */
+private fun puntoPosizione(): Bitmap {
+    val lato = 76
+    val bitmap = Bitmap.createBitmap(lato, lato, Bitmap.Config.ARGB_8888)
+    val tela = Canvas(bitmap)
+    val centro = lato / 2f
+    val azzurro = ColoriFascia.posizione.toArgb()
+    // Alone largo e un po' piu' carico: e' quello che fa trovare il punto a colpo
+    // d'occhio in mezzo alle targhette, prima ancora di distinguerne il colore.
+    tela.drawCircle(centro, centro, centro, Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = azzurro
+        alpha = 55
+    })
+    tela.drawCircle(centro, centro, 26f, Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = azzurro
+        alpha = 90
+    })
+    tela.drawCircle(centro, centro, 21f, Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = android.graphics.Color.WHITE
+    })
+    tela.drawCircle(centro, centro, 16f, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = azzurro })
+    return bitmap
 }
 
 /** Il puntino dei distributori fuori dalla testa della classifica: piccolo, ma con la

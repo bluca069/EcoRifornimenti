@@ -55,6 +55,38 @@ private fun coloreFascia(fascia: FasciaPrezzo?): UIColor = when (fascia) {
     else -> UIColor.colorWithRed(0.604, 0.416, 0.0, 1.0)
 }
 
+/**
+ * Dove si trova l'utente: e' un'annotazione a parte, cosi' il delegato sa che deve
+ * disegnarci il punto azzurro e che toccandola non si apre nessuna scheda.
+ */
+@OptIn(ExperimentalForeignApi::class)
+class AnnotazionePosizione : MLNPointAnnotation() {
+    val identificativo: String = "posizione_utente"
+}
+
+/**
+ * Il punto della posizione corrente: cerchio azzurro, anello bianco e un alone chiaro
+ * attorno, cosi' resta visibile anche sopra le strade gialle della mappa.
+ */
+@OptIn(ExperimentalForeignApi::class)
+fun immaginePosizione(): UIImage? {
+    val lato = 38.0
+    UIGraphicsBeginImageContextWithOptions(CGSizeMake(lato, lato), false, 0.0)
+    // Alone largo e un po' piu' carico: e' quello che fa trovare il punto a colpo
+    // d'occhio in mezzo alle targhette, prima ancora di distinguerne il colore.
+    UIColor.colorWithRed(0.102, 0.451, 0.910, 0.22).setFill()
+    UIBezierPath.bezierPathWithOvalInRect(CGRectMake(0.0, 0.0, lato, lato)).fill()
+    UIColor.colorWithRed(0.102, 0.451, 0.910, 0.35).setFill()
+    UIBezierPath.bezierPathWithOvalInRect(CGRectMake(6.0, 6.0, lato - 12, lato - 12)).fill()
+    UIColor.whiteColor.setFill()
+    UIBezierPath.bezierPathWithOvalInRect(CGRectMake(8.5, 8.5, lato - 17, lato - 17)).fill()
+    UIColor.colorWithRed(0.102, 0.451, 0.910, 1.0).setFill()
+    UIBezierPath.bezierPathWithOvalInRect(CGRectMake(11.0, 11.0, lato - 22, lato - 22)).fill()
+    val immagine = UIGraphicsGetImageFromCurrentImageContext()
+    UIGraphicsEndImageContext()
+    return immagine
+}
+
 /** Il blu del distributore aperto: lo stesso di ColoriFascia.selezionato. */
 @OptIn(ExperimentalForeignApi::class)
 private fun coloreSelezione(): UIColor = UIColor.colorWithRed(0.102, 0.310, 0.627, 1.0)
