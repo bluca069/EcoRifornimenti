@@ -5,6 +5,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.interop.UIKitView
 import cocoapods.MapLibre.MLNAnnotationImage
+import cocoapods.MapLibre.MLNCameraChangeReason
+import cocoapods.MapLibre.MLNCameraChangeReasonGesturePan
+import cocoapods.MapLibre.MLNCameraChangeReasonGesturePinch
 import cocoapods.MapLibre.MLNAnnotationProtocol
 import cocoapods.MapLibre.MLNMapView
 import cocoapods.MapLibre.MLNMapViewDelegateProtocol
@@ -36,6 +39,7 @@ import platform.darwin.NSObject
 @Composable
 actual fun MappaImpianti(
     centro: Posizione,
+    posizioneGps: Posizione?,
     raggioKm: Int,
     impianti: List<Impianto>,
     fasce: Map<Int, FasciaPrezzo>,
@@ -43,10 +47,12 @@ actual fun MappaImpianti(
     selezionato: Impianto?,
     onSeleziona: (Impianto?) -> Unit,
     richiesteRicentro: Int,
+    onSpostataDallUtente: (Posizione) -> Unit,
     modifier: Modifier,
 ) {
     val stato = remember { StatoMappaIos() }
     stato.onSeleziona = onSeleziona
+    stato.onSpostataDallUtente = onSpostataDallUtente
 
     UIKitView(
         modifier = modifier,
@@ -59,7 +65,10 @@ actual fun MappaImpianti(
             }
         },
         update = {
-            stato.disegna(impianti, fasce, preferenza, selezionato, centro, raggioKm, richiesteRicentro)
+            stato.disegna(
+                impianti, fasce, preferenza, selezionato, centro, posizioneGps, raggioKm,
+                richiesteRicentro,
+            )
         },
     )
 }
@@ -72,11 +81,13 @@ actual fun MappaImpianti(
 private class StatoMappaIos {
     var mappa: MLNMapView? = null
     var onSeleziona: (Impianto?) -> Unit = {}
+    var onSpostataDallUtente: (Posizione) -> Unit = {}
     private var disegnati: List<Int> = emptyList()
     private var ultimaSelezione: Int? = null
     /** L'ultimo centro su cui si e' inquadrata la mappa. */
     private var ultimoCentro: Posizione? = null
     private var ultimoRicentro = 0
+    private var ultimaGps: Posizione? = null
 
     /**
      * Il delegato fa due cose: da' a ogni annotazione la sua immagine (targhetta o
@@ -89,6 +100,15 @@ private class StatoMappaIos {
             mapView: MLNMapView,
             imageForAnnotation: MLNAnnotationProtocol,
         ): MLNAnnotationImage? {
+            if (imageForAnnotation is AnnotazionePosizione) {
+                mapView.dequeueReusableAnnotationImageWithIdentifier(imageForAnnotation.identificativo)
+                    ?.let { return it }
+                val punto = immaginePosizione() ?: return null
+                return MLNAnnotationImage.annotationImageWithImage(
+                    image = punto,
+                    reuseIdentifier = imageForAnnotation.identificativo,
+                )
+            }
             val annotazione = imageForAnnotation as? AnnotazionePrezzo ?: return null
             mapView.dequeueReusableAnnotationImageWithIdentifier(annotazione.identificativo)
                 ?.let { return it }
@@ -112,6 +132,24 @@ private class StatoMappaIos {
         override fun mapView(mapView: MLNMapView, didDeselectAnnotation: MLNAnnotationProtocol) {
             onSeleziona(null)
         }
+
+        /**
+         * Fine di uno spostamento. Si distingue il trascinamento dell'utente dai
+         * movimenti decisi dall'app: solo il primo fa comparire "Cerca in questa zona",
+         * altrimenti la schermata proporrebbe di cercare dove si trova gia'.
+         */
+        override fun mapView(
+            mapView: MLNMapView,
+            regionDidChangeWithReason: MLNCameraChangeReason,
+            animated: Boolean,
+        ) {
+            val perGesto = (regionDidChangeWithReason and MLNCameraChangeReasonGesturePan) != 0uL ||
+                (regionDidChangeWithReason and MLNCameraChangeReasonGesturePinch) != 0uL
+            if (!perGesto) return
+            mapView.centerCoordinate.useContents {
+                onSpostataDallUtente(Posizione(latitude, longitude))
+            }
+        }
     }
 
     fun disegna(
@@ -120,15 +158,28 @@ private class StatoMappaIos {
         preferenza: PreferenzaRicerca,
         selezionato: Impianto?,
         centro: Posizione,
+        posizioneGps: Posizione?,
         raggioKm: Int,
         richiesteRicentro: Int,
     ) {
         val mappa = mappa ?: return
         inquadra(mappa, centro, raggioKm, richiesteRicentro)
         val idOra = impianti.map { it.id }
-        if (idOra == disegnati && selezionato?.id == ultimaSelezione) return
+        if (idOra == disegnati && selezionato?.id == ultimaSelezione && posizioneGps == ultimaGps) return
+        ultimaGps = posizioneGps
 
         mappa.annotations?.let { mappa.removeAnnotations(it) }
+
+        // Dove si trova l'utente: e' il riferimento rispetto a cui si leggono tutte le
+        // distanze, quindi c'e' sempre.
+        if (posizioneGps != null) {
+            mappa.addAnnotation(
+                AnnotazionePosizione().apply {
+                    setCoordinate(CLLocationCoordinate2DMake(posizioneGps.lat, posizioneGps.lng))
+                }
+            )
+        }
+
         val conTarghetta = impiantiConTarghetta(impianti, raggioKm)
         impianti.forEach { impianto ->
             val prezzo = impianto.prezzoPer(preferenza) ?: return@forEach

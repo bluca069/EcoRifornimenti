@@ -48,7 +48,14 @@ data class SchedaImpianto(
  */
 data class StatoRicerca(
     val stato: StatoSchermata = StatoSchermata.Iniziale,
+    /** Il centro della ricerca: di norma dove ci si trova, ma anche un punto scelto sulla mappa. */
     val posizione: Posizione? = null,
+    /**
+     * Dove si trova davvero l'utente, che non e' sempre il centro della ricerca: dopo
+     * un "cerca in questa zona" il punto azzurro sulla mappa deve restare dove si e',
+     * non spostarsi sul pezzo di mappa che si sta guardando.
+     */
+    val posizioneGps: Posizione? = null,
     val preferenza: PreferenzaRicerca = PreferenzaRicerca(),
     val impianti: List<Impianto> = emptyList(),
     val fasce: Map<Int, FasciaPrezzo> = emptyMap(),
@@ -112,14 +119,14 @@ class ModelloRicerca(
         scope.launch {
             _stato.value = _stato.value.copy(stato = StatoSchermata.AttesaPosizione)
             val nota = posizioni.ultimaPosizioneNota()
-            if (nota != null) cercaDa(nota)
+            if (nota != null) cercaDaPosizioneGps(nota)
 
             val precisa = posizioni.posizioneCorrente()
             when {
                 precisa == null && nota == null -> _stato.value = _stato.value.copy(
                     stato = StatoSchermata.Errore("Posizione non disponibile: controlla che il GPS sia acceso")
                 )
-                precisa != null && (nota == null || distanteDa(nota, precisa)) -> cercaDa(precisa)
+                precisa != null && (nota == null || distanteDa(nota, precisa)) -> cercaDaPosizioneGps(precisa)
             }
         }
     }
@@ -145,7 +152,7 @@ class ModelloRicerca(
         ricercaInCorso = scope.launch {
             ricerca.svuotaCache()
             val centro = posizioneAggiornata() ?: _stato.value.posizione ?: return@launch
-            _stato.value = _stato.value.copy(posizione = centro)
+            _stato.value = _stato.value.copy(posizione = centro, posizioneGps = centro)
             eseguiRicerca(centro, _stato.value.preferenza)
         }
     }
@@ -163,7 +170,7 @@ class ModelloRicerca(
         scope.launch {
             val precedente = _stato.value.posizione ?: return@launch
             val attuale = posizioni.posizioneCorrente() ?: return@launch
-            if (distanteDa(precedente, attuale)) cercaDa(attuale)
+            if (distanteDa(precedente, attuale)) cercaDaPosizioneGps(attuale)
         }
     }
 
@@ -171,7 +178,7 @@ class ModelloRicerca(
     private suspend fun posizioneAggiornata(): Posizione? {
         if (!posizioni.permessoConcesso()) return null
         val attuale = posizioni.posizioneCorrente() ?: return null
-        val precedente = _stato.value.posizione
+        val precedente = _stato.value.posizioneGps
         return if (precedente == null || distanteDa(precedente, attuale)) attuale else precedente
     }
 
@@ -223,6 +230,12 @@ class ModelloRicerca(
     fun riprova() {
         val da = _stato.value.posizione
         if (da != null) cercaDa(da) else avvia()
+    }
+
+    /** Come [cercaDa], ma segnala che quel centro e' anche la posizione dell'utente. */
+    private fun cercaDaPosizioneGps(centro: Posizione) {
+        _stato.value = _stato.value.copy(posizioneGps = centro)
+        cercaDa(centro)
     }
 
     private fun cercaDa(centro: Posizione) {

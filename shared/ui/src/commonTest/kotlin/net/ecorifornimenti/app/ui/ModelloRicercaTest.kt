@@ -564,6 +564,20 @@ class PosizioneCheCambiaTest {
     }
 
     @Test
+    fun `cercando in un'altra zona il punto della posizione resta dov'e'`() = runTest {
+        val m = modello(this)
+        m.avvia()
+        advanceUntilIdle()
+
+        val altrove = Posizione(45.60, 9.40)
+        m.cercaIn(altrove)
+        advanceUntilIdle()
+
+        assertEquals(altrove, m.stato.value.posizione, "la ricerca si sposta")
+        assertEquals(MILANO, m.stato.value.posizioneGps, "ma l'utente e' rimasto dov'era")
+    }
+
+    @Test
     fun `aggiornando da fermi il centro non si muove`() = runTest {
         val posizioni = PosizioneMobile(MILANO)
         val m = ModelloRicerca(SorgenteFinta(), posizioni, this, PreferenzeInMemoria())
@@ -688,6 +702,9 @@ class CodificaPreferenzeTest {
         assertEquals(base, CodificaPreferenze.decodifica(null, null, null))
         // Un archivio scritto da una versione futura non deve impedire l'avvio.
         assertEquals(base, CodificaPreferenze.decodifica("IDROGENO", "TELEPATIA", 999))
+        // Un raggio fuori dall'elenco non deve passare, uno dentro si'.
+        assertEquals(5, CodificaPreferenze.decodifica(null, null, 5).raggioKm)
+        assertEquals(base.raggioKm, CodificaPreferenze.decodifica(null, null, 7).raggioKm)
     }
 }
 

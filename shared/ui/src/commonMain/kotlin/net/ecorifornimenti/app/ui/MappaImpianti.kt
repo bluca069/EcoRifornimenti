@@ -11,7 +11,7 @@ import net.ecorifornimenti.app.model.PreferenzaRicerca
  * La mappa con i distributori. Ogni piattaforma la disegna con il suo motore nativo
  * (MapLibre su Android e iOS), ma l'ingresso e' questo, uguale per tutte.
  *
- * @param centro dove si trova l'utente: la mappa ci si centra e ci disegna il puntino.
+ * @param centro il centro della ricerca, su cui la mappa si inquadra.
  * @param raggioKm l'area cercata, disegnata come cerchio per far capire il perimetro.
  * @param fasce colore di ogni marker, gia' calcolato: qui non si decide nulla.
  * @param richiesteRicentro contatore che cresce a ogni aggiornamento chiesto dall'utente.
@@ -19,6 +19,8 @@ import net.ecorifornimenti.app.model.PreferenzaRicerca
 @Composable
 expect fun MappaImpianti(
     centro: Posizione,
+    /** Dove si trova l'utente: ci va il punto azzurro. Assente se non si sa. */
+    posizioneGps: Posizione?,
     raggioKm: Int,
     impianti: List<Impianto>,
     fasce: Map<Int, FasciaPrezzo>,
@@ -30,6 +32,12 @@ expect fun MappaImpianti(
      * GPS anche se nel frattempo aveva trascinato la vista altrove.
      */
     richiesteRicentro: Int,
+    /**
+     * Chiamata quando e' **l'utente** a spostare la mappa, con il centro in cui l'ha
+     * portata. I movimenti decisi dall'app (ricentro, prima inquadratura) non la
+     * scatenano: altrimenti la schermata proporrebbe di cercare dove si trova gia'.
+     */
+    onSpostataDallUtente: (Posizione) -> Unit,
     modifier: Modifier = Modifier,
 )
 
