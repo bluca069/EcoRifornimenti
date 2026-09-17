@@ -27,3 +27,19 @@ actual fun ricordaAvvioNavigazione(): (Posizione, String) -> Unit {
         }
     }
 }
+
+@Composable
+actual fun ricordaAperturaLink(): (String) -> Unit {
+    val contesto = LocalContext.current
+    return { indirizzo ->
+        try {
+            contesto.startActivity(
+                Intent(Intent.ACTION_VIEW, Uri.parse(indirizzo))
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            )
+        } catch (e: ActivityNotFoundException) {
+            // Nessun browser installato: non c'e' nulla di sensato da fare, e far
+            // cadere l'app per questo sarebbe peggio.
+        }
+    }
+}

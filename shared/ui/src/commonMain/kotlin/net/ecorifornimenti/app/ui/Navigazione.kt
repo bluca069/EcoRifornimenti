@@ -11,3 +11,13 @@ import net.ecorifornimenti.app.model.Posizione
  */
 @Composable
 expect fun ricordaAvvioNavigazione(): (Posizione, String) -> Unit
+
+/**
+ * Apre un indirizzo nel browser del telefono. Serve al rimando alla fonte dei dati:
+ * chi vuole controllare un prezzo deve poter arrivare all'originale.
+ */
+@Composable
+expect fun ricordaAperturaLink(): (String) -> Unit
+
+/** L'indirizzo pubblico dell'Osservaprezzi, quello che vede chiunque dal browser. */
+const val SITO_OSSERVAPREZZI = "https://carburanti.mise.gov.it/ospzSearch/zona"

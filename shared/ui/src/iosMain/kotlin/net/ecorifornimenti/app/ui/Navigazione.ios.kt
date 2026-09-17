@@ -15,3 +15,8 @@ actual fun ricordaAvvioNavigazione(): (Posizione, String) -> Unit = { posizione,
     val url = NSURL(string = "http://maps.apple.com/?daddr=${posizione.lat},${posizione.lng}&q=$etichetta")
     UIApplication.sharedApplication.openURL(url)
 }
+
+@Composable
+actual fun ricordaAperturaLink(): (String) -> Unit = { indirizzo ->
+    UIApplication.sharedApplication.openURL(NSURL(string = indirizzo))
+}

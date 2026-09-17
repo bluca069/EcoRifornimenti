@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -16,6 +17,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.only
@@ -28,9 +31,7 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
@@ -47,7 +48,9 @@ import androidx.compose.material3.TextButton
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.setValue
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -56,14 +59,19 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.runtime.collectAsState
 import net.ecorifornimenti.app.model.Impianto
+import kotlinx.coroutines.delay
+import net.ecorifornimenti.app.geo.distanzaKm
 import net.ecorifornimenti.app.model.ModalitaErogazione
+import net.ecorifornimenti.app.model.Posizione
 import net.ecorifornimenti.app.model.PreferenzaRicerca
 import net.ecorifornimenti.app.model.TipoCarburante
 
@@ -103,6 +111,38 @@ fun SchermataRicerca(
             )
             StatoSchermata.Iniziale, StatoSchermata.AttesaPosizione -> Attesa()
             is StatoSchermata.Pronta -> BoxWithConstraints(Modifier.fillMaxSize()) {
+                val centro = stato.posizione
+                var centroMappa by remember { mutableStateOf<Posizione?>(null) }
+                var proponiRicerca by remember { mutableStateOf(false) }
+
+                // Dopo ogni ricerca la proposta non ha piu' senso: si sta gia'
+                // guardando il risultato di quella zona.
+                LaunchedEffect(centro) {
+                    centroMappa = null
+                    proponiRicerca = false
+                }
+
+                // Il pulsante non compare subito: si aspetta che la mano si sia fermata
+                // per un secondo, altrimenti apparirebbe e sparirebbe a ogni scatto
+                // mentre si sta ancora scorrendo.
+                LaunchedEffect(centroMappa) {
+                    val portataA = centroMappa
+                    if (portataA == null || centro == null) {
+                        proponiRicerca = false
+                        return@LaunchedEffect
+                    }
+                    delay(ATTESA_PROPOSTA_MS)
+                    proponiRicerca = distanzaKm(centro, portataA) > SPOSTAMENTO_PROPOSTA_KM
+                }
+
+                val proposta = PropostaRicerca(
+                    visibile = proponiRicerca,
+                    onSpostata = { centroMappa = it },
+                    onCerca = {
+                        centroMappa?.let { modello.cercaIn(it) }
+                        proponiRicerca = false
+                    },
+                )
                 // Non "e' un tablet" o "e' un telefono": conta solo se lo schermo e'
                 // piu' largo che alto, perche' e' li' che una lista a tutta larghezza
                 // sprecherebbe lo spazio che serve alla mappa.
@@ -111,12 +151,14 @@ fun SchermataRicerca(
                     DisposizioneOrizzontale(
                         stato = stato,
                         modello = modello,
+                        proposta = proposta,
                         onApriImpostazioni = { impostazioniAperte = true },
                     )
                 } else {
                     DisposizioneVerticale(
                         stato = stato,
                         modello = modello,
+                        proposta = proposta,
                         onApriImpostazioni = { impostazioniAperte = true },
                     )
                 }
@@ -130,10 +172,11 @@ fun SchermataRicerca(
 private fun DisposizioneVerticale(
     stato: StatoRicerca,
     modello: ModelloRicerca,
+    proposta: PropostaRicerca,
     onApriImpostazioni: () -> Unit,
 ) {
     Box(Modifier.fillMaxSize()) {
-        Mappa(stato, modello, Modifier.fillMaxSize())
+        Mappa(stato, modello, proposta.onSpostata, Modifier.fillMaxSize())
 
         // I filtri e i risultati stanno sopra la mappa, che invece va a tutto schermo:
         // le aree di sistema (notch, Dynamic Island, barra home) le rispetta solo il
@@ -145,6 +188,7 @@ private fun DisposizioneVerticale(
         ) {
             BarraFiltri(stato.preferenza, modello::cambiaPreferenza, onApriImpostazioni)
             Avanzamento(stato)
+            PulsanteCercaQui(proposta)
         }
 
         Pannello(
@@ -167,11 +211,12 @@ private fun DisposizioneVerticale(
 private fun DisposizioneOrizzontale(
     stato: StatoRicerca,
     modello: ModelloRicerca,
+    proposta: PropostaRicerca,
     onApriImpostazioni: () -> Unit,
 ) {
     Row(Modifier.fillMaxSize()) {
         Box(Modifier.weight(1f).fillMaxHeight()) {
-            Mappa(stato, modello, Modifier.fillMaxSize())
+            Mappa(stato, modello, proposta.onSpostata, Modifier.fillMaxSize())
             Column(
                 Modifier.fillMaxWidth()
                     .windowInsetsPadding(
@@ -183,6 +228,7 @@ private fun DisposizioneOrizzontale(
             ) {
                 BarraFiltri(stato.preferenza, modello::cambiaPreferenza, onApriImpostazioni)
                 Avanzamento(stato)
+                PulsanteCercaQui(proposta)
             }
         }
         Pannello(
@@ -202,11 +248,27 @@ private fun DisposizioneOrizzontale(
 
 private val LARGHEZZA_PANNELLO = 260.dp
 
+/**
+ * Quel che serve per proporre "cerca qui": se mostrarlo, dove l'utente ha portato la
+ * mappa e cosa fare quando accetta.
+ */
+private data class PropostaRicerca(
+    val visibile: Boolean,
+    val onSpostata: (Posizione) -> Unit,
+    val onCerca: () -> Unit,
+)
+
 @Composable
-private fun Mappa(stato: StatoRicerca, modello: ModelloRicerca, modifier: Modifier) {
+private fun Mappa(
+    stato: StatoRicerca,
+    modello: ModelloRicerca,
+    onSpostataDallUtente: (Posizione) -> Unit,
+    modifier: Modifier,
+) {
     val centro = stato.posizione ?: return
     MappaImpianti(
         centro = centro,
+        posizioneGps = stato.posizioneGps,
         raggioKm = stato.preferenza.raggioKm,
         impianti = stato.impianti,
         fasce = stato.fasce,
@@ -214,9 +276,35 @@ private fun Mappa(stato: StatoRicerca, modello: ModelloRicerca, modifier: Modifi
         selezionato = stato.selezionato,
         onSeleziona = modello::seleziona,
         richiesteRicentro = stato.richiesteRicentro,
+        onSpostataDallUtente = onSpostataDallUtente,
         modifier = modifier,
     )
 }
+
+/**
+ * La proposta di cercare dove si sta guardando. Sta sotto i filtri e non in fondo allo
+ * schermo, dove finirebbe dietro la classifica.
+ */
+@Composable
+private fun PulsanteCercaQui(proposta: PropostaRicerca) {
+    if (!proposta.visibile) return
+    Box(Modifier.fillMaxWidth().padding(top = 8.dp), contentAlignment = Alignment.Center) {
+        Button(onClick = proposta.onCerca) {
+            Icon(Icons.Filled.Search, contentDescription = null, modifier = Modifier.size(18.dp))
+            Text("  Cerca in questa zona")
+        }
+    }
+}
+
+/** Quanto si aspetta, a mano ferma, prima di proporre la ricerca. */
+private const val ATTESA_PROPOSTA_MS = 1_000L
+
+/**
+ * Sotto questo spostamento la proposta non compare: si vedrebbero quasi gli stessi
+ * distributori, e un pulsante che appare per un trascinamento di un centimetro e' solo
+ * un ingombro sulla mappa.
+ */
+private const val SPOSTAMENTO_PROPOSTA_KM = 1.0
 
 @Composable
 private fun Avanzamento(stato: StatoRicerca) {
@@ -296,12 +384,13 @@ private fun BarraFiltri(
 }
 
 /**
- * Le impostazioni che si toccano di rado: come si vuole il rifornimento e fin dove
- * cercare. Stanno in un modale perche' in alto rubavano spazio alla mappa ogni volta,
- * pur cambiando quasi mai.
+ * Le impostazioni che si toccano di rado: come si vuole il rifornimento, fin dove
+ * cercare, e da dove arrivano i dati. Stanno in un modale perche' in alto rubavano
+ * spazio alla mappa a ogni apertura, pur cambiando quasi mai.
  *
- * Il riepilogo sotto ogni gruppo ricorda che il raggio non e' gratis: oltre i 10 km
- * servono piu' interrogazioni al servizio, e l'attesa si sente.
+ * Il riquadro e' largo e squadrato, con i contenuti su **due colonne** quando c'e'
+ * spazio: a telefono ruotato lo schermo e' basso e stretto in altezza, e una colonna
+ * sola costringeva a scorrere per arrivare alla fonte dei dati.
  */
 @Composable
 private fun ImpostazioniRicerca(
@@ -309,61 +398,141 @@ private fun ImpostazioniRicerca(
     onCambia: (PreferenzaRicerca) -> Unit,
     onChiudi: () -> Unit,
 ) {
-    AlertDialog(
+    Dialog(
         onDismissRequest = onChiudi,
-        title = { Text("Impostazioni di ricerca") },
-        confirmButton = { TextButton(onClick = onChiudi) { Text("Fatto") } },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text("Rifornimento", style = MaterialTheme.typography.labelLarge)
-                    Row(
-                        modifier = Modifier.horizontalScroll(rememberScrollState()),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    ) {
-                        ModalitaErogazione.entries.forEach { modalita ->
-                            ChipFiltro(
-                                selezionato = preferenza.modalita == modalita,
-                                etichetta = modalita.etichetta,
-                                onClick = { onCambia(preferenza.copy(modalita = modalita)) },
-                            )
-                        }
-                    }
-                }
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text("Raggio di ricerca", style = MaterialTheme.typography.labelLarge)
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        PreferenzaRicerca.RAGGI_KM.forEach { raggio ->
-                            ChipFiltro(
-                                selezionato = preferenza.raggioKm == raggio,
-                                etichetta = "$raggio km",
-                                onClick = { onCambia(preferenza.copy(raggioKm = raggio)) },
-                            )
-                        }
-                    }
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+    ) {
+        BoxWithConstraints(Modifier.fillMaxWidth(0.94f).padding(vertical = 12.dp)) {
+            val dueColonne = maxWidth >= 520.dp
+            Surface(
+                shape = RoundedCornerShape(6.dp),
+                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                tonalElevation = 6.dp,
+            ) {
+                Column(Modifier.padding(20.dp)) {
                     Text(
-                        text = if (preferenza.raggioKm <= 10) {
-                            "Ricerca immediata."
-                        } else {
-                            "Oltre i 10 km i distributori più lontani compaiono poco per volta."
-                        },
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        text = "Impostazioni di ricerca",
+                        style = MaterialTheme.typography.headlineSmall,
                     )
+                    Spacer(Modifier.height(14.dp))
+
+                    if (dueColonne) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(28.dp)) {
+                            Column(Modifier.weight(1f)) { Scelte(preferenza, onCambia) }
+                            // In due colonne la linea non serve: a separare ci pensa
+                            // gia' lo spazio fra le colonne.
+                            Column(Modifier.weight(1f)) { InformazioniApp(conSeparatore = false) }
+                        }
+                    } else {
+                        Column(
+                            Modifier.verticalScroll(rememberScrollState()),
+                            verticalArrangement = Arrangement.spacedBy(14.dp),
+                        ) {
+                            Scelte(preferenza, onCambia)
+                            InformazioniApp()
+                        }
+                    }
+
+                    Spacer(Modifier.height(8.dp))
+                    Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterEnd) {
+                        TextButton(onClick = onChiudi) { Text("Fatto") }
+                    }
                 }
-                // Serve a chi segnala un problema: la prima domanda e' sempre "che
-                // versione hai?", e qui e' l'unico posto dove guardare.
-                val versione = versioneApp()
-                if (versione.isNotEmpty()) {
-                    Text(
-                        text = "EcoRifornimenti $versione · dati Osservaprezzi MIMIT",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+            }
+        }
+    }
+}
+
+/** Rifornimento e raggio: le due scelte che governano la ricerca. */
+@Composable
+private fun Scelte(preferenza: PreferenzaRicerca, onCambia: (PreferenzaRicerca) -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text("Rifornimento", style = MaterialTheme.typography.labelLarge)
+            Row(
+                modifier = Modifier.horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                ModalitaErogazione.entries.forEach { modalita ->
+                    ChipFiltro(
+                        selezionato = preferenza.modalita == modalita,
+                        etichetta = modalita.etichetta,
+                        onClick = { onCambia(preferenza.copy(modalita = modalita)) },
                     )
                 }
             }
-        },
-    )
+        }
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text("Raggio di ricerca", style = MaterialTheme.typography.labelLarge)
+            // Da quattro raggi in poi i chip non entrano in larghezza: la riga scorre
+            // invece di tagliare l'ultima etichetta.
+            Row(
+                modifier = Modifier.horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                PreferenzaRicerca.RAGGI_KM.forEach { raggio ->
+                    ChipFiltro(
+                        selezionato = preferenza.raggioKm == raggio,
+                        etichetta = "$raggio km",
+                        onClick = { onCambia(preferenza.copy(raggioKm = raggio)) },
+                    )
+                }
+            }
+            Text(
+                text = if (preferenza.raggioKm <= 10) {
+                    "Ricerca immediata."
+                } else {
+                    "Oltre i 10 km i distributori più lontani compaiono poco per volta."
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+/**
+ * Da dove arrivano i numeri, per esteso e con il rimando all'originale: chi vuole
+ * verificare un prezzo, o capire perche' un distributore non c'e', deve poter arrivare
+ * alla fonte invece di fidarsi e basta.
+ *
+ * C'e' anche la versione, perche' la prima domanda a chi segnala un problema e' sempre
+ * "che versione hai?" e questo e' l'unico posto dove guardare.
+ */
+@Composable
+private fun InformazioniApp(conSeparatore: Boolean = true) {
+    val apriLink = ricordaAperturaLink()
+    val versione = versioneApp()
+
+    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        if (conSeparatore) HorizontalDivider(Modifier.padding(vertical = 6.dp))
+        Text(
+            text = "Prezzi e distributori: Osservaprezzi Carburanti, Ministero delle " +
+                "Imprese e del Made in Italy.",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Text(
+            text = SITO_OSSERVAPREZZI,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.primary,
+            textDecoration = TextDecoration.Underline,
+            modifier = Modifier.clickable { apriLink(SITO_OSSERVAPREZZI) },
+        )
+        Text(
+            text = "Mappa: MapLibre su dati $ATTRIBUZIONE_MAPPA.",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(top = 4.dp),
+        )
+        if (versione.isNotEmpty()) {
+            Text(
+                text = "EcoRifornimenti $versione",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
 }
 
 /** Un filtro: compatto, su una riga sola, senza spuntine che rubano larghezza. */
