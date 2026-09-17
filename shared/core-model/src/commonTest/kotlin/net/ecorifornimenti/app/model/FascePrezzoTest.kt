@@ -80,6 +80,14 @@ class PreferenzaRicercaTest {
     }
 
     @Test
+    fun `i raggi offerti partono da cinque km`() {
+        assertEquals(listOf(5, 10, 15, 25), PreferenzaRicerca.RAGGI_KM)
+        // Il predefinito resta 10: e' il raggio piu' ampio che il servizio copre con
+        // una sola chiamata.
+        assertEquals(10, PreferenzaRicerca().raggioKm)
+    }
+
+    @Test
     fun `i codici carburante sono quelli attesi dall'API`() {
         assertEquals("2-1", PreferenzaRicerca(TipoCarburante.GASOLIO, ModalitaErogazione.SELF).fuelType)
         assertEquals("1-0", PreferenzaRicerca(TipoCarburante.BENZINA, ModalitaErogazione.SERVITO).fuelType)

@@ -47,7 +47,11 @@ data class PreferenzaRicerca(
     val fuelType: String get() = modalita.codice(tipo)
 
     companion object {
-        /** I raggi selezionabili. 10 km e' il caso istantaneo: una sola chiamata. */
-        val RAGGI_KM = listOf(10, 15, 25)
+        /**
+         * I raggi selezionabili. Fino a 10 km il servizio risponde con una sola
+         * chiamata, quindi 5 e 10 km sono istantanei; oltre servono piu'
+         * interrogazioni e i distributori lontani compaiono poco per volta.
+         */
+        val RAGGI_KM = listOf(5, 10, 15, 25)
     }
 }
