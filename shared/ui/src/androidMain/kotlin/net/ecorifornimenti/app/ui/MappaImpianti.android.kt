@@ -23,6 +23,8 @@ import org.maplibre.android.geometry.LatLngBounds
 import org.maplibre.android.maps.MapLibreMap
 import org.maplibre.android.maps.MapView
 import org.maplibre.android.maps.Style
+import org.maplibre.android.plugins.annotation.LineManager
+import org.maplibre.android.plugins.annotation.LineOptions
 import org.maplibre.android.plugins.annotation.Symbol
 import org.maplibre.android.plugins.annotation.SymbolManager
 import org.maplibre.android.plugins.annotation.SymbolOptions
@@ -46,6 +48,7 @@ actual fun MappaImpianti(
     selezionato: Impianto?,
     onSeleziona: (Impianto?) -> Unit,
     richiesteRicentro: Int,
+    percorso: List<Posizione>,
     onSpostataDallUtente: (Posizione) -> Unit,
     modifier: Modifier,
 ) {
@@ -65,6 +68,9 @@ actual fun MappaImpianti(
                 vista.onCreate(null)
                 vista.getMapAsync { mappa ->
                     mappa.setStyle(Style.Builder().fromUri(STILE_MAPPA)) { stile ->
+                        // Le linee vanno create prima dei simboli, cosi' la strada
+                        // resta sotto le targhette dei prezzi e non le copre.
+                        stato.linee = LineManager(vista, mappa, stile)
                         val gestore = SymbolManager(vista, mappa, stile).apply {
                             // Niente sovrapposizioni: in citta' ci sono centinaia di
                             // distributori nel raggio piu' stretto, e lasciarli
@@ -98,7 +104,7 @@ actual fun MappaImpianti(
                             )
                         }
                         mappa.uiSettings.setAttributionMargins(16, 0, 0, 16)
-                        stato.disegna(centro, posizioneGps, raggioKm, impianti, fasce, preferenza, selezionato, richiesteRicentro)
+                        stato.disegna(centro, posizioneGps, raggioKm, impianti, fasce, preferenza, selezionato, richiesteRicentro, percorso)
                     }
                 }
                 vista.onStart()
@@ -106,12 +112,13 @@ actual fun MappaImpianti(
             }
         },
         update = {
-            stato.disegna(centro, posizioneGps, raggioKm, impianti, fasce, preferenza, selezionato, richiesteRicentro)
+            stato.disegna(centro, posizioneGps, raggioKm, impianti, fasce, preferenza, selezionato, richiesteRicentro, percorso)
         },
     )
 
     DisposableEffect(Unit) {
         onDispose {
+            stato.linee?.onDestroy()
             stato.gestore?.onDestroy()
             stato.vista?.let { it.onPause(); it.onStop(); it.onDestroy() }
             stato.vista = null
@@ -128,6 +135,8 @@ private class StatoMappa {
     var vista: MapView? = null
     var mappa: MapLibreMap? = null
     var gestore: SymbolManager? = null
+    var linee: LineManager? = null
+    private var percorsoDisegnato: List<Posizione> = emptyList()
 
     /** Dove l'utente ha portato la mappa, per proporgli di cercare li'. */
     var onSpostataDallUtente: (Posizione) -> Unit = {}
@@ -151,8 +160,10 @@ private class StatoMappa {
         preferenza: PreferenzaRicerca,
         selezionato: Impianto?,
         richiesteRicentro: Int,
+        percorso: List<Posizione>,
     ) {
         val mappa = mappa ?: return
+        disegnaPercorso(mappa, percorso, centro)
         val gestore = gestore ?: return
         val stile = mappa.style ?: return
 
@@ -205,6 +216,23 @@ private class StatoMappa {
                 )
                 perSimbolo[simbolo.id] = impianto
             }
+            // Scegliendo un distributore dalla lista la mappa ci va sopra: senza,
+            // la scheda si apre su un impianto che puo' essere fuori dalla vista, e
+            // tocca cercarlo a mano fra le targhette.
+            if (selezionato != null && selezionato.id != ultimaSelezione) {
+                mappa.animateCamera(
+                    CameraUpdateFactory.newLatLngZoom(
+                        LatLng(selezionato.posizione.lat, selezionato.posizione.lng),
+                        // Se si arriva dalla vista di un intero viaggio lo zoom e'
+                        // lontanissimo: si scende a una scala in cui si vede la strada.
+                        maxOf(mappa.cameraPosition.zoom, ZOOM_DISTRIBUTORE),
+                    )
+                )
+                // Si segna il centro come gia' inquadrato: senza, il ricentro
+                // automatico qui sotto riporterebbe subito la vista sull'area
+                // cercata, annullando lo spostamento appena fatto.
+                ultimoCentro = centro
+            }
             disegnati = idOra
             ultimaSelezione = selezionato?.id
         }
@@ -231,6 +259,35 @@ private class StatoMappa {
         }
     }
 
+    /**
+     * Traccia la strada del viaggio. Si ridisegna solo quando cambia davvero: una
+     * polilinea di mille punti rifatta a ogni aggiornamento della lista costa, e si
+     * vedrebbe.
+     */
+    private fun disegnaPercorso(mappa: MapLibreMap, percorso: List<Posizione>, centroInquadrato: Posizione) {
+        val gestore = linee ?: return
+        if (percorso == percorsoDisegnato) return
+        gestore.deleteAll()
+        if (percorso.size >= 2) {
+            gestore.create(
+                LineOptions()
+                    .withLatLngs(percorso.map { LatLng(it.lat, it.lng) })
+                    .withLineColor(coloreEsadecimale(COLORE_PERCORSO))
+                    .withLineWidth(5f)
+                    .withLineOpacity(0.8f)
+            )
+            // Un viaggio va visto tutto: restare sullo zoom di prima mostrerebbe i
+            // primi dieci chilometri e lascerebbe immaginare il resto.
+            val riquadro = LatLngBounds.Builder()
+                .includes(percorso.map { LatLng(it.lat, it.lng) })
+                .build()
+            mappa.animateCamera(CameraUpdateFactory.newLatLngBounds(riquadro, 60))
+            // Come sopra: la vista e' quella del viaggio e va lasciata stare.
+            ultimoCentro = centroInquadrato
+        }
+        percorsoDisegnato = percorso
+    }
+
     /** Il riquadro che contiene il cerchio di ricerca, per inquadrare tutta l'area. */
     private fun riquadro(centro: Posizione, raggioKm: Int): LatLngBounds {
         val dLat = raggioKm / 111.32
@@ -252,6 +309,9 @@ private class StatoMappa {
          */
         const val SPOSTAMENTO_MAPPA_KM = 0.3
         const val ICONA_POSIZIONE = "posizione_utente"
+
+        /** Scala a cui si vede il distributore e le strade attorno. */
+        const val ZOOM_DISTRIBUTORE = 14.0
     }
 
     private fun nomeIcona(
@@ -354,4 +414,15 @@ private fun etichettaPrezzo(prezzo: Double, fascia: FasciaPrezzo?, evidenziato: 
     val baseTesto = altezzaTarga / 2 - (pennelloTesto.descent() + pennelloTesto.ascent()) / 2
     tela.drawText(testo, larghezza / 2, baseTesto, pennelloTesto)
     return bitmap
+}
+
+/** MapLibre vuole il colore della linea come stringa "#RRGGBB". */
+private fun coloreEsadecimale(argb: Long): String {
+    val cifre = "0123456789ABCDEF"
+    val rgb = (argb and 0xFFFFFF).toInt()
+    val sb = StringBuilder("#")
+    for (spostamento in intArrayOf(20, 16, 12, 8, 4, 0)) {
+        sb.append(cifre[(rgb shr spostamento) and 0xF])
+    }
+    return sb.toString()
 }

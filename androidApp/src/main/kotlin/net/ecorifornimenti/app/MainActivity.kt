@@ -13,6 +13,8 @@ import androidx.lifecycle.lifecycleScope
 import net.ecorifornimenti.app.api.OsservaprezziClient
 import net.ecorifornimenti.app.api.RicercaImpianti
 import net.ecorifornimenti.app.api.osservaprezziClient
+import net.ecorifornimenti.app.api.servizioLuoghiPredefinito
+import net.ecorifornimenti.app.api.servizioPercorsoPredefinito
 import net.ecorifornimenti.app.geo.PosizioneAndroid
 import net.ecorifornimenti.app.ui.ModelloRicerca
 import net.ecorifornimenti.app.ui.PreferenzeAndroid
@@ -45,10 +47,13 @@ class MainActivity : ComponentActivity() {
         client = osservaprezziClient()
         val posizioni = PosizioneAndroid(applicationContext)
         modello = ModelloRicerca(
-            ricerca = RicercaImpianti(client),
+            // I percorsi e i luoghi non vengono dal Ministero: il primo e' OSRM, il
+            // secondo Nominatim, entrambi su dati OpenStreetMap.
+            ricerca = RicercaImpianti(client, percorsi = servizioPercorsoPredefinito()),
             posizioni = posizioni,
             scope = lifecycleScope,
             preferenze = PreferenzeAndroid(applicationContext),
+            luoghi = servizioLuoghiPredefinito(),
         )
 
         setContent {

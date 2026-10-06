@@ -84,9 +84,15 @@ Il multi-punto e' solo per `/search/route`, dove i punti sono la polyline del pe
 ### `/search/route` non e' utilizzabile come copertura ad area
 
 Accetta molti punti in **una sola chiamata** (49 punti -> 457 impianti, copertura fino a 36 km),
-ma il corridoio attorno alla polyline e' di appena **~0.5 km** (misurato con due punti quasi
-coincidenti: solo 2 impianti entro 0.47 km). Per coprire un disco servirebbero centinaia di punti.
-Inoltre nella risposta `distance` e' `null`.
+ma il corridoio attorno alla polyline e' stretto: **circa 1 km per lato** (misurato il
+18/09 su Firenze-Siena, deviazione mediana 0,25 km e massima 0,94 km su 44 impianti).
+La stima di ~0,5 km fatta il 14/09 veniva da due punti quasi coincidenti, cioe' dal
+caso peggiore. Per coprire un **disco** servirebbero comunque centinaia di punti —
+per seguire una **strada** quel corridoio stretto e' invece esattamente il requisito,
+ed e' la base della ricerca su percorso.
+
+Il tetto di punti accettati e' almeno **88** (non 49, che era solo il campione provato
+il 14/09). Nella risposta `distance` resta `null`.
 Richiede almeno 2 punti: con 1 punto restituisce 0 risultati.
 
 ### Copertura di raggi > 10 km: griglia di chiamate `zone`

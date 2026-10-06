@@ -13,8 +13,8 @@ android {
         applicationId = "net.ecorifornimenti.app"
         minSdk = libs.versions.androidMinSdk.get().toInt()
         targetSdk = libs.versions.androidTargetSdk.get().toInt()
-        versionCode = 40
-        versionName = "0.13.0"
+        versionCode = 47
+        versionName = "0.15.0"
 
         // La libreria nativa di MapLibre pesa ~12 MB per ABI: con tutte e quattro
         // l'APK di debug arrivava a 71 MB. Telefono ed emulatore qui sono arm64.

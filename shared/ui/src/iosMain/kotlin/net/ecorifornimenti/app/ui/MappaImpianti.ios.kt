@@ -11,10 +11,14 @@ import cocoapods.MapLibre.MLNCameraChangeReasonGesturePinch
 import cocoapods.MapLibre.MLNAnnotationProtocol
 import cocoapods.MapLibre.MLNMapView
 import cocoapods.MapLibre.MLNMapViewDelegateProtocol
+import cocoapods.MapLibre.MLNPolyline
 import cocoapods.MapLibre.MLNCoordinateBounds
 import cocoapods.MapLibre.MLNCoordinateBoundsMake
 import kotlinx.cinterop.CValue
 import kotlinx.cinterop.ExperimentalForeignApi
+import kotlinx.cinterop.allocArray
+import kotlinx.cinterop.get
+import kotlinx.cinterop.memScoped
 import kotlinx.cinterop.useContents
 import kotlinx.cinterop.ObjCSignatureOverride
 import kotlinx.cinterop.readValue
@@ -24,6 +28,7 @@ import net.ecorifornimenti.app.model.Impianto
 import net.ecorifornimenti.app.model.Posizione
 import net.ecorifornimenti.app.model.PreferenzaRicerca
 import platform.CoreGraphics.CGRectZero
+import platform.CoreLocation.CLLocationCoordinate2D
 import platform.CoreLocation.CLLocationCoordinate2DMake
 import platform.Foundation.NSURL
 import platform.darwin.NSObject
@@ -47,6 +52,7 @@ actual fun MappaImpianti(
     selezionato: Impianto?,
     onSeleziona: (Impianto?) -> Unit,
     richiesteRicentro: Int,
+    percorso: List<Posizione>,
     onSpostataDallUtente: (Posizione) -> Unit,
     modifier: Modifier,
 ) {
@@ -67,7 +73,7 @@ actual fun MappaImpianti(
         update = {
             stato.disegna(
                 impianti, fasce, preferenza, selezionato, centro, posizioneGps, raggioKm,
-                richiesteRicentro,
+                richiesteRicentro, percorso,
             )
         },
     )
@@ -88,6 +94,7 @@ private class StatoMappaIos {
     private var ultimoCentro: Posizione? = null
     private var ultimoRicentro = 0
     private var ultimaGps: Posizione? = null
+    private var percorsoDisegnato: List<Posizione> = emptyList()
 
     /**
      * Il delegato fa due cose: da' a ogni annotazione la sua immagine (targhetta o
@@ -161,9 +168,11 @@ private class StatoMappaIos {
         posizioneGps: Posizione?,
         raggioKm: Int,
         richiesteRicentro: Int,
+        percorso: List<Posizione>,
     ) {
         val mappa = mappa ?: return
         inquadra(mappa, centro, raggioKm, richiesteRicentro)
+        disegnaPercorso(mappa, percorso, centro)
         val idOra = impianti.map { it.id }
         if (idOra == disegnati && selezionato?.id == ultimaSelezione && posizioneGps == ultimaGps) return
         ultimaGps = posizioneGps
@@ -197,6 +206,17 @@ private class StatoMappaIos {
                 setSubtitle("${formattaPrezzo(prezzo.prezzo)} € · ${formattaDistanza(impianto.distanzaKm)}")
             }
             mappa.addAnnotation(annotazione)
+        }
+        // Scegliendo un distributore dalla lista la mappa ci va sopra: senza, la
+        // scheda si apre su un impianto che puo' essere fuori dalla vista.
+        if (selezionato != null && selezionato.id != ultimaSelezione) {
+            mappa.setCenterCoordinate(
+                CLLocationCoordinate2DMake(selezionato.posizione.lat, selezionato.posizione.lng),
+                zoomLevel = maxOf(mappa.zoomLevel, ZOOM_DISTRIBUTORE),
+                animated = true,
+            )
+            // Come sopra: la vista e' sul distributore scelto e va lasciata stare.
+            ultimoCentro = centro
         }
         disegnati = idOra
         ultimaSelezione = selezionato?.id
@@ -232,12 +252,47 @@ private class StatoMappaIos {
         ultimoCentro = centro
     }
 
+    /**
+     * Traccia la strada del viaggio. Si ridisegna solo quando cambia davvero: una
+     * polilinea di mille punti rifatta a ogni aggiornamento costa, e si vedrebbe.
+     */
+    @OptIn(ExperimentalForeignApi::class)
+    private fun disegnaPercorso(
+        mappa: MLNMapView,
+        percorso: List<Posizione>,
+        centroInquadrato: Posizione,
+    ) {
+        if (percorso == percorsoDisegnato) return
+        mappa.overlays.filterIsInstance<MLNPolyline>().forEach { mappa.removeOverlay(it) }
+        if (percorso.size >= 2) {
+            memScoped {
+                val coordinate = allocArray<CLLocationCoordinate2D>(percorso.size)
+                percorso.forEachIndexed { i, p ->
+                    coordinate[i].latitude = p.lat
+                    coordinate[i].longitude = p.lng
+                }
+                val linea = MLNPolyline.polylineWithCoordinates(coordinate, percorso.size.toULong())
+                mappa.addOverlay(linea)
+                // Un viaggio va visto tutto: restare sullo zoom di prima mostrerebbe
+                // i primi dieci chilometri e lascerebbe immaginare il resto.
+                mappa.setVisibleCoordinateBounds(linea.overlayBounds, animated = true)
+                // Si segna il centro come gia' inquadrato: senza, il ricentro
+                // automatico riporterebbe subito la vista sull'area cercata.
+                ultimoCentro = centroInquadrato
+            }
+        }
+        percorsoDisegnato = percorso
+    }
+
     private companion object {
         /**
          * Quanto deve spostarsi il centro perche' valga la pena ricentrare: sotto i
          * 300 metri il movimento darebbe piu' fastidio che informazione.
          */
         const val SPOSTAMENTO_MAPPA_KM = 0.3
+
+        /** Scala a cui si vede il distributore e le strade attorno. */
+        const val ZOOM_DISTRIBUTORE = 14.0
     }
 }
 

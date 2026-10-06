@@ -32,6 +32,8 @@ expect fun MappaImpianti(
      * GPS anche se nel frattempo aveva trascinato la vista altrove.
      */
     richiesteRicentro: Int,
+    /** La strada del viaggio in corso, da disegnare sulla mappa. Vuota se non c'e'. */
+    percorso: List<Posizione>,
     /**
      * Chiamata quando e' **l'utente** a spostare la mappa, con il centro in cui l'ha
      * portata. I movimenti decisi dall'app (ricentro, prima inquadratura) non la
@@ -50,3 +52,6 @@ const val STILE_MAPPA = "https://tiles.openfreemap.org/styles/liberty"
 
 /** L'attribuzione richiesta dalla licenza ODbL dei dati OpenStreetMap. */
 const val ATTRIBUZIONE_MAPPA = "© OpenStreetMap contributors"
+
+/** Il colore della strada tracciata sulla mappa. */
+const val COLORE_PERCORSO = 0xFF1A4FA0

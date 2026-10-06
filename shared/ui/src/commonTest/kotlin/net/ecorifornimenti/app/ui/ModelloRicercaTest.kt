@@ -8,7 +8,12 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.advanceUntilIdle
 import net.ecorifornimenti.app.api.AvanzamentoRicerca
 import net.ecorifornimenti.app.api.ErroreRicerca
+import net.ecorifornimenti.app.api.ImpiantoSulPercorso
+import net.ecorifornimenti.app.api.Luogo
+import net.ecorifornimenti.app.api.ServizioLuoghi
+import net.ecorifornimenti.app.api.RisultatoPercorso
 import net.ecorifornimenti.app.api.SorgenteImpianti
+import net.ecorifornimenti.app.geo.Percorso
 import net.ecorifornimenti.app.model.DettaglioImpianto
 import net.ecorifornimenti.app.model.Impianto
 import net.ecorifornimenti.app.model.ModalitaErogazione
@@ -73,6 +78,15 @@ private class SorgenteFinta(
 
     override suspend fun svuotaCache() { cacheSvuotata++ }
 
+    override suspend fun cercaSuPercorso(
+        partenza: Posizione,
+        arrivo: Posizione,
+        pref: PreferenzaRicerca,
+    ) = RisultatoPercorso(
+        percorso = Percorso(listOf(partenza, arrivo), distanzaKm = 100.0, durataMinuti = 80),
+        impianti = DUE_IMPIANTI.map { ImpiantoSulPercorso(it, kmDallaPartenza = 20.0) },
+    )
+
     override suspend fun dettaglio(idImpianto: Int): DettaglioImpianto {
         dettagliChiesti++
         erroreDettaglio?.let { throw it }
@@ -92,12 +106,30 @@ private class SorgenteFinta(
     }
 }
 
+/** Servizio di luoghi finto: restituisce sempre Bologna. */
+private class LuoghiFinti(private val esito: List<Luogo> = listOf(SIENA)) : ServizioLuoghi {
+    var ricerche = 0
+        private set
+    /** L'ultimo bias geografico ricevuto: serve a verificare che venga passato. */
+    var ultimoVicinoA: Posizione? = null
+        private set
+
+    override suspend fun cerca(testo: String, vicinoA: Posizione?): List<Luogo> {
+        ricerche++
+        ultimoVicinoA = vicinoA
+        return esito
+    }
+}
+
+private val SIENA = Luogo("Siena", "Toscana", Posizione(43.3186, 11.3317))
+
 private fun modello(
     scope: TestScope,
     posizioni: ProviderPosizione = PosizioneFissa(MILANO),
     sorgente: SorgenteFinta = SorgenteFinta(),
     preferenze: ArchivioPreferenze = PreferenzeInMemoria(),
-): ModelloRicerca = ModelloRicerca(sorgente, posizioni, scope, preferenze)
+    luoghi: ServizioLuoghi? = LuoghiFinti(),
+): ModelloRicerca = ModelloRicerca(sorgente, posizioni, scope, preferenze, luoghi)
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class ModelloRicercaTest {
@@ -619,6 +651,137 @@ class PosizioneCheCambiaTest {
     }
 }
 
+class ViaggioTest {
+
+    @Test
+    fun `scegliendo una destinazione la lista diventa quella del viaggio`() = runTest {
+        val m = modello(this)
+        m.avvia()
+        advanceUntilIdle()
+
+        m.vaiVerso(SIENA)
+        advanceUntilIdle()
+
+        val s = m.stato.value
+        assertTrue(s.lungoPercorso, "si stanno guardando i distributori sulla strada")
+        assertEquals(SIENA, s.viaggio?.destinazione)
+        assertEquals(100.0, s.viaggio?.percorso?.distanzaKm)
+        // La distanza mostrata e' quanta strada manca, non la linea d'aria.
+        assertTrue(s.impianti.all { it.distanzaKm == 20.0 })
+    }
+
+    @Test
+    fun `tornando alla zona il viaggio si chiude`() = runTest {
+        val m = modello(this)
+        m.avvia()
+        advanceUntilIdle()
+        m.vaiVerso(SIENA)
+        advanceUntilIdle()
+
+        m.tornaAllaZona()
+        advanceUntilIdle()
+
+        assertTrue(!m.stato.value.lungoPercorso)
+        assertEquals(MILANO, m.stato.value.posizione)
+    }
+
+    @Test
+    fun `anche cercare per zona chiude il viaggio`() = runTest {
+        val m = modello(this)
+        m.avvia()
+        advanceUntilIdle()
+        m.vaiVerso(SIENA)
+        advanceUntilIdle()
+
+        m.cercaIn(Posizione(45.50, 9.25))
+        advanceUntilIdle()
+
+        assertTrue(!m.stato.value.lungoPercorso)
+    }
+
+    @Test
+    fun `i luoghi si cercano solo da tre lettere in su`() = runTest {
+        val luoghi = LuoghiFinti()
+        val m = modello(this, luoghi = luoghi)
+
+        m.cercaLuoghi("Si")
+        advanceUntilIdle()
+        assertEquals(0, luoghi.ricerche, "Photon e' pubblico: non lo si interroga per due lettere")
+
+        m.cercaLuoghi("Siena")
+        advanceUntilIdle()
+        assertEquals(1, luoghi.ricerche)
+        assertEquals(listOf(SIENA), m.stato.value.luoghiTrovati)
+    }
+
+    @Test
+    fun `scrivendo di seguito si interroga il servizio una volta sola`() = runTest {
+        val luoghi = LuoghiFinti()
+        val m = modello(this, luoghi = luoghi)
+
+        // Chi scrive "Siena" produce cinque eventi in rapida successione: il geocoder
+        // pubblico deve vederne uno, non cinque.
+        m.cercaLuoghi("Sie")
+        m.cercaLuoghi("Sien")
+        m.cercaLuoghi("Siena")
+        advanceUntilIdle()
+
+        assertEquals(1, luoghi.ricerche)
+    }
+
+    @Test
+    fun `la posizione di chi cerca mette davanti i luoghi vicini`() = runTest {
+        val luoghi = LuoghiFinti()
+        val m = modello(this, luoghi = luoghi)
+        m.avvia()
+        advanceUntilIdle()
+
+        m.cercaLuoghi("Siena")
+        advanceUntilIdle()
+
+        assertEquals(MILANO, luoghi.ultimoVicinoA, "senza bias, gli omonimi lontani vincono")
+    }
+
+    @Test
+    fun `svuotando il campo spariscono i suggerimenti`() = runTest {
+        val m = modello(this)
+        m.cercaLuoghi("Siena")
+        advanceUntilIdle()
+
+        m.cercaLuoghi("")
+        advanceUntilIdle()
+
+        assertTrue(m.stato.value.luoghiTrovati.isEmpty())
+        assertTrue(!m.stato.value.ricercaLuoghiInCorso)
+    }
+
+    @Test
+    fun `se il percorso non si calcola lo dice`() = runTest {
+        val rotto = object : SorgenteImpianti {
+            override fun cerca(centro: Posizione, pref: PreferenzaRicerca) =
+                flow { emit(AvanzamentoRicerca(DUE_IMPIANTI, 1, 1)) }
+            override suspend fun cercaTutto(centro: Posizione, pref: PreferenzaRicerca) = DUE_IMPIANTI
+            override suspend fun dettaglio(idImpianto: Int) = throw ErroreRicerca.TroppeRichieste
+            override suspend fun svuotaCache() = Unit
+            override suspend fun cercaSuPercorso(
+                partenza: Posizione,
+                arrivo: Posizione,
+                pref: PreferenzaRicerca,
+            ): RisultatoPercorso = throw ErroreRicerca.PercorsoNonTrovato
+        }
+        val m = ModelloRicerca(rotto, PosizioneFissa(MILANO), this, PreferenzeInMemoria(), LuoghiFinti())
+        m.avvia()
+        advanceUntilIdle()
+
+        m.vaiVerso(SIENA)
+        advanceUntilIdle()
+
+        val stato = m.stato.value.stato
+        assertTrue(stato is StatoSchermata.Errore)
+        assertTrue((stato as StatoSchermata.Errore).messaggio.contains("percorso", ignoreCase = true))
+    }
+}
+
 class SenzaReteTest {
 
     @Test
@@ -650,6 +813,11 @@ class SenzaReteTest {
             override suspend fun cercaTutto(centro: Posizione, pref: PreferenzaRicerca) = DUE_IMPIANTI
             override suspend fun dettaglio(idImpianto: Int) = throw ErroreRicerca.TroppeRichieste
             override suspend fun svuotaCache() = Unit
+            override suspend fun cercaSuPercorso(
+                partenza: Posizione,
+                arrivo: Posizione,
+                pref: PreferenzaRicerca,
+            ) = RisultatoPercorso(Percorso(emptyList(), 0.0, 0), emptyList())
         }
         val m = ModelloRicerca(sorgente, PosizioneFissa(MILANO), this, PreferenzeInMemoria())
         m.avvia()
@@ -675,6 +843,11 @@ class SenzaReteTest {
             override suspend fun cercaTutto(centro: Posizione, pref: PreferenzaRicerca) = DUE_IMPIANTI
             override suspend fun dettaglio(idImpianto: Int) = throw ErroreRicerca.TroppeRichieste
             override suspend fun svuotaCache() = Unit
+            override suspend fun cercaSuPercorso(
+                partenza: Posizione,
+                arrivo: Posizione,
+                pref: PreferenzaRicerca,
+            ) = RisultatoPercorso(Percorso(emptyList(), 0.0, 0), emptyList())
         }
         val m = ModelloRicerca(sorgente, PosizioneFissa(MILANO), this, PreferenzeInMemoria())
         m.avvia()

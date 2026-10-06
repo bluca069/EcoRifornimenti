@@ -2,11 +2,15 @@ package net.ecorifornimenti.app.ui
 
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import net.ecorifornimenti.app.api.ErroreRicerca
+import net.ecorifornimenti.app.api.Luogo
+import net.ecorifornimenti.app.api.ServizioLuoghi
+import net.ecorifornimenti.app.geo.Percorso
 import net.ecorifornimenti.app.api.SorgenteImpianti
 import net.ecorifornimenti.app.geo.ProviderPosizione
 import net.ecorifornimenti.app.model.DettaglioImpianto
@@ -41,6 +45,15 @@ data class SchedaImpianto(
 )
 
 /**
+ * Il viaggio che si sta esaminando: dove si va, quanto e' lungo, e la strada da
+ * disegnare sulla mappa.
+ */
+data class ViaggioInCorso(
+    val destinazione: Luogo,
+    val percorso: Percorso,
+)
+
+/**
  * Lo stato completo della schermata principale.
  *
  * [fasce] e' precalcolato qui e non dentro la mappa: dipende dall'insieme degli
@@ -72,9 +85,22 @@ data class StatoRicerca(
     val richiesteRicentro: Int = 0,
     val selezionato: Impianto? = null,
     val scheda: SchedaImpianto? = null,
+    /**
+     * Quando c'e', i distributori elencati sono quelli lungo la strada e la loro
+     * distanza e' la **progressiva sul percorso**, non la distanza in linea d'aria.
+     */
+    val viaggio: ViaggioInCorso? = null,
+    /** Quanto si esce dalla strada per ogni impianto, lungo un viaggio. */
+    val deviazioni: Map<Int, Double> = emptyMap(),
+    /** I luoghi proposti mentre si scrive la destinazione. */
+    val luoghiTrovati: List<Luogo> = emptyList(),
+    val ricercaLuoghiInCorso: Boolean = false,
 ) {
     /** Il piu' conveniente: e' la risposta alla domanda per cui l'app esiste. */
     val migliore: Impianto? get() = impianti.firstOrNull()
+
+    /** Se si stanno guardando i distributori lungo un viaggio invece che attorno. */
+    val lungoPercorso: Boolean get() = viaggio != null
 
     val mostraAvanzamento: Boolean
         get() = (stato as? StatoSchermata.Pronta)?.caricamento == true
@@ -92,6 +118,8 @@ class ModelloRicerca(
     private val scope: CoroutineScope,
     /** Le scelte dell'utente, ritrovate cosi' come le aveva lasciate. */
     private val preferenze: ArchivioPreferenze = PreferenzeInMemoria(),
+    /** Chi trasforma "Bologna" in coordinate. Assente se la ricerca su percorso non serve. */
+    private val luoghi: ServizioLuoghi? = null,
 ) {
     private val _stato = MutableStateFlow(StatoRicerca(preferenza = preferenze.leggi()))
     val stato: StateFlow<StatoRicerca> = _stato.asStateFlow()
@@ -101,6 +129,9 @@ class ModelloRicerca(
 
     /** Il caricamento della scheda aperta: cambiare distributore lo annulla. */
     private var dettaglioInCorso: Job? = null
+
+    /** La ricerca dei luoghi mentre si scrive: ogni lettera annulla la precedente. */
+    private var luoghiInCorso: Job? = null
 
     /**
      * Il flusso di avvio: posizione e poi ricerca.
@@ -196,6 +227,84 @@ class ModelloRicerca(
      * e il dettaglio la completa quando arriva: aspettare la rete per mostrare qualcosa
      * farebbe sembrare il tocco ignorato.
      */
+    /**
+     * Cerca i luoghi che corrispondono a quel che si sta scrivendo.
+     *
+     * Ogni chiamata annulla la precedente: si interroga il servizio per quel che
+     * l'utente ha scritto **adesso**, non per ogni lettera digitata lungo la strada.
+     */
+    fun cercaLuoghi(testo: String) {
+        luoghiInCorso?.cancel()
+        if (testo.trim().length < 3) {
+            _stato.value = _stato.value.copy(luoghiTrovati = emptyList(), ricercaLuoghiInCorso = false)
+            return
+        }
+        _stato.value = _stato.value.copy(ricercaLuoghiInCorso = true)
+        luoghiInCorso = scope.launch {
+            // Si aspetta che la mano si fermi: Photon e' infrastruttura pubblica, e
+            // interrogarla a ogni tasto e' esattamente l'uso che non va fatto.
+            delay(QUIETE_PRIMA_DI_CERCARE_MS)
+            val trovati = try {
+                // La posizione di chi cerca mette davanti i luoghi vicini: senza,
+                // "Siena" puo' rendere prima una frazione omonima dall'altra parte.
+                luoghi?.cerca(testo, _stato.value.posizioneGps) ?: emptyList()
+            } catch (e: ErroreRicerca) {
+                emptyList()
+            }
+            _stato.value = _stato.value.copy(luoghiTrovati = trovati, ricercaLuoghiInCorso = false)
+        }
+    }
+
+    /**
+     * Cerca i distributori lungo la strada verso [destinazione].
+     *
+     * Da qui in poi la lista non e' piu' "cosa c'e' attorno" ma "dove conviene
+     * fermarsi strada facendo", e la distanza di ogni impianto diventa quanta strada
+     * manca per arrivarci.
+     */
+    fun vaiVerso(destinazione: Luogo) {
+        val partenza = _stato.value.posizioneGps ?: _stato.value.posizione ?: return
+        ricercaInCorso?.cancel()
+        _stato.value = _stato.value.copy(
+            stato = StatoSchermata.Pronta(caricamento = true),
+            luoghiTrovati = emptyList(),
+            selezionato = null,
+            scheda = null,
+            avanzamento = 0f,
+        )
+        ricercaInCorso = scope.launch {
+            val pref = _stato.value.preferenza
+            try {
+                val esito = ricerca.cercaSuPercorso(partenza, destinazione.posizione, pref)
+                // La distanza che conta lungo un viaggio e' quanta strada manca, non
+                // quanto dista in linea d'aria da dove si e' partiti.
+                val impianti = esito.impianti.map {
+                    it.impianto.copy(distanzaKm = it.kmDallaPartenza)
+                }
+                val deviazioni = esito.impianti.associate { it.impianto.id to it.deviazioneKm }
+                _stato.value = _stato.value.copy(
+                    stato = StatoSchermata.Pronta(caricamento = false),
+                    viaggio = ViaggioInCorso(destinazione, esito.percorso),
+                    impianti = impianti,
+                    fasce = fasce(impianti, pref),
+                    deviazioni = deviazioni,
+                    avanzamento = 1f,
+                )
+            } catch (e: ErroreRicerca) {
+                _stato.value = _stato.value.copy(
+                    stato = StatoSchermata.Errore(e.message ?: "Percorso non riuscito")
+                )
+            }
+        }
+    }
+
+    /** Chiude il viaggio e torna a guardare cosa c'e' attorno. */
+    fun tornaAllaZona() {
+        if (_stato.value.viaggio == null) return
+        _stato.value = _stato.value.copy(viaggio = null, luoghiTrovati = emptyList())
+        _stato.value.posizioneGps?.let { cercaDa(it) } ?: avvia()
+    }
+
     fun seleziona(impianto: Impianto?) {
         dettaglioInCorso?.cancel()
         if (impianto == null) {
@@ -247,6 +356,8 @@ class ModelloRicerca(
             avanzamento = 0f,
             selezionato = null,
             scheda = null,
+            viaggio = null,
+            deviazioni = emptyMap(),
         )
         ricercaInCorso = scope.launch { eseguiRicerca(centro, pref) }
     }
@@ -286,5 +397,8 @@ class ModelloRicerca(
          * cammina o guida.
          */
         const val SPOSTAMENTO_SIGNIFICATIVO_KM = 0.5
+
+        /** Quanto si aspetta, a mano ferma, prima di interrogare il geocoder. */
+        const val QUIETE_PRIMA_DI_CERCARE_MS = 300L
     }
 }

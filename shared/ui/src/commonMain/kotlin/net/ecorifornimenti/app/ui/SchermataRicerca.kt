@@ -27,11 +27,13 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
@@ -50,12 +52,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.setValue
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Route
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -67,6 +70,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.runtime.collectAsState
+import net.ecorifornimenti.app.api.Luogo
 import net.ecorifornimenti.app.model.Impianto
 import kotlinx.coroutines.delay
 import net.ecorifornimenti.app.geo.distanzaKm
@@ -93,6 +97,22 @@ fun SchermataRicerca(
 ) {
     val stato by modello.stato.collectAsState()
     var impostazioniAperte by remember { mutableStateOf(false) }
+    var destinazioneAperta by remember { mutableStateOf(false) }
+
+    if (destinazioneAperta) {
+        ScegliDestinazione(
+            stato = stato,
+            onTesto = modello::cercaLuoghi,
+            onScelto = { luogo ->
+                destinazioneAperta = false
+                modello.vaiVerso(luogo)
+            },
+            onChiudi = {
+                destinazioneAperta = false
+                modello.cercaLuoghi("")
+            },
+        )
+    }
 
     if (impostazioniAperte) {
         ImpostazioniRicerca(
@@ -132,7 +152,10 @@ fun SchermataRicerca(
                         return@LaunchedEffect
                     }
                     delay(ATTESA_PROPOSTA_MS)
-                    proponiRicerca = distanzaKm(centro, portataA) > SPOSTAMENTO_PROPOSTA_KM
+                    // Durante un viaggio la proposta non c'entra nulla: si sta
+                    // guardando una strada, non una zona in cui cercare.
+                    proponiRicerca = !stato.lungoPercorso &&
+                        distanzaKm(centro, portataA) > SPOSTAMENTO_PROPOSTA_KM
                 }
 
                 val proposta = PropostaRicerca(
@@ -153,6 +176,7 @@ fun SchermataRicerca(
                         modello = modello,
                         proposta = proposta,
                         onApriImpostazioni = { impostazioniAperte = true },
+                        onApriDestinazione = { destinazioneAperta = true },
                     )
                 } else {
                     DisposizioneVerticale(
@@ -160,6 +184,7 @@ fun SchermataRicerca(
                         modello = modello,
                         proposta = proposta,
                         onApriImpostazioni = { impostazioniAperte = true },
+                        onApriDestinazione = { destinazioneAperta = true },
                     )
                 }
             }
@@ -174,6 +199,7 @@ private fun DisposizioneVerticale(
     modello: ModelloRicerca,
     proposta: PropostaRicerca,
     onApriImpostazioni: () -> Unit,
+    onApriDestinazione: () -> Unit,
 ) {
     Box(Modifier.fillMaxSize()) {
         Mappa(stato, modello, proposta.onSpostata, Modifier.fillMaxSize())
@@ -186,7 +212,10 @@ private fun DisposizioneVerticale(
                 .windowInsetsPadding(WindowInsets.safeDrawing)
                 .padding(12.dp)
         ) {
-            BarraFiltri(stato.preferenza, modello::cambiaPreferenza, onApriImpostazioni)
+            BarraFiltri(
+                stato.preferenza, modello::cambiaPreferenza, onApriImpostazioni, onApriDestinazione,
+            )
+            BarraViaggio(stato, modello::tornaAllaZona)
             Avanzamento(stato)
             PulsanteCercaQui(proposta)
         }
@@ -213,6 +242,7 @@ private fun DisposizioneOrizzontale(
     modello: ModelloRicerca,
     proposta: PropostaRicerca,
     onApriImpostazioni: () -> Unit,
+    onApriDestinazione: () -> Unit,
 ) {
     Row(Modifier.fillMaxSize()) {
         Box(Modifier.weight(1f).fillMaxHeight()) {
@@ -226,7 +256,10 @@ private fun DisposizioneOrizzontale(
                     )
                     .padding(12.dp)
             ) {
-                BarraFiltri(stato.preferenza, modello::cambiaPreferenza, onApriImpostazioni)
+                BarraFiltri(
+                    stato.preferenza, modello::cambiaPreferenza, onApriImpostazioni, onApriDestinazione,
+                )
+                BarraViaggio(stato, modello::tornaAllaZona)
                 Avanzamento(stato)
                 PulsanteCercaQui(proposta)
             }
@@ -276,6 +309,7 @@ private fun Mappa(
         selezionato = stato.selezionato,
         onSeleziona = modello::seleziona,
         richiesteRicentro = stato.richiesteRicentro,
+        percorso = stato.viaggio?.percorso?.punti.orEmpty(),
         onSpostataDallUtente = onSpostataDallUtente,
         modifier = modifier,
     )
@@ -357,6 +391,7 @@ private fun BarraFiltri(
     preferenza: PreferenzaRicerca,
     onCambia: (PreferenzaRicerca) -> Unit,
     onApriImpostazioni: () -> Unit,
+    onApriDestinazione: () -> Unit,
 ) {
     Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
         Row(
@@ -375,6 +410,9 @@ private fun BarraFiltri(
                         onClick = { onCambia(preferenza.copy(tipo = tipo)) },
                     )
                 }
+            }
+            IconButton(onClick = onApriDestinazione) {
+                Icon(Icons.Filled.Route, contentDescription = "Cerca lungo un percorso")
             }
             IconButton(onClick = onApriImpostazioni) {
                 Icon(Icons.Filled.Tune, contentDescription = "Impostazioni di ricerca")
@@ -535,6 +573,137 @@ private fun InformazioniApp(conSeparatore: Boolean = true) {
     }
 }
 
+/**
+ * Dove si sta andando: si scrive una citta' o un indirizzo e si sceglie fra i luoghi
+ * proposti. Da li' la ricerca passa dai dintorni alla strada.
+ */
+@Composable
+private fun ScegliDestinazione(
+    stato: StatoRicerca,
+    onTesto: (String) -> Unit,
+    onScelto: (Luogo) -> Unit,
+    onChiudi: () -> Unit,
+) {
+    var testo by remember { mutableStateOf("") }
+
+    Dialog(onDismissRequest = onChiudi, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        BoxWithConstraints(Modifier.fillMaxWidth(0.94f).padding(vertical = 12.dp)) {
+            Surface(
+                shape = RoundedCornerShape(6.dp),
+                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                tonalElevation = 6.dp,
+            ) {
+                Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("Dove stai andando?", style = MaterialTheme.typography.headlineSmall)
+                    Text(
+                        "Cerchiamo i distributori lungo la strada, non solo qui attorno.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    OutlinedTextField(
+                        value = testo,
+                        onValueChange = {
+                            testo = it
+                            onTesto(it)
+                        },
+                        singleLine = true,
+                        label = { Text("Citta' o indirizzo") },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+
+                    when {
+                        stato.ricercaLuoghiInCorso -> Text(
+                            "Cerco…",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        // Tre lettere e' la soglia sotto la quale non si interroga il
+                        // servizio pubblico dei luoghi: va detto, se no sembra rotto.
+                        testo.trim().length in 1..2 -> Text(
+                            "Scrivi almeno tre lettere.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        testo.trim().length >= 3 && stato.luoghiTrovati.isEmpty() -> Text(
+                            "Nessun luogo trovato.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+
+                    LazyColumn(Modifier.heightIn(max = 260.dp)) {
+                        items(stato.luoghiTrovati, key = { it.nome + it.posizione.lat }) { luogo ->
+                            Column(
+                                Modifier.fillMaxWidth()
+                                    .clickable { onScelto(luogo) }
+                                    .padding(vertical = 10.dp)
+                            ) {
+                                Text(luogo.nome, style = MaterialTheme.typography.bodyMedium)
+                                // Senza il "dove", tre Siena in fila sono indistinguibili.
+                                if (luogo.dove.isNotEmpty()) {
+                                    Text(
+                                        text = luogo.dove,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                            }
+                            HorizontalDivider(
+                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
+                            )
+                        }
+                    }
+
+                    Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterEnd) {
+                        TextButton(onClick = onChiudi) { Text("Annulla") }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Il viaggio in corso: dove si va, quanto e' lunga la strada e quanto ci vuole, con
+ * la via d'uscita per tornare a guardare i dintorni.
+ */
+@Composable
+private fun BarraViaggio(stato: StatoRicerca, onChiudi: () -> Unit) {
+    val viaggio = stato.viaggio ?: return
+    Card(
+        modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
+    ) {
+        Row(
+            Modifier.fillMaxWidth().padding(start = 12.dp, top = 6.dp, bottom = 6.dp, end = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text(
+                    // Il nome completo di Nominatim e' lunghissimo: in testa c'e' il
+                    // posto, il resto e' la gerarchia amministrativa.
+                    text = viaggio.destinazione.nome.substringBefore(","),
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = "${viaggio.percorso.distanzaKm.toInt()} km · " +
+                        "${viaggio.percorso.durataMinuti} min · " +
+                        "${stato.impianti.size} distributori sulla strada",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                )
+            }
+            IconButton(onClick = onChiudi) {
+                Icon(Icons.Filled.Close, contentDescription = "Chiudi il percorso")
+            }
+        }
+    }
+}
+
 /** Un filtro: compatto, su una riga sola, senza spuntine che rubano larghezza. */
 @Composable
 private fun ChipFiltro(selezionato: Boolean, etichetta: String, onClick: () -> Unit) {
@@ -601,6 +770,8 @@ private fun ElencoRisultati(
                     posizione = posizione + 1,
                     impianto = impianto,
                     preferenza = stato.preferenza,
+                    lungoPercorso = stato.lungoPercorso,
+                    deviazioneKm = stato.deviazioni[impianto.id],
                     colore = ColoriFascia[stato.fasce[impianto.id]],
                     prezzoMigliore = prezzoMigliore,
                     selezionato = impianto.id == stato.selezionato?.id,
@@ -623,6 +794,8 @@ private fun RigaImpianto(
     posizione: Int,
     impianto: Impianto,
     preferenza: PreferenzaRicerca,
+    lungoPercorso: Boolean,
+    deviazioneKm: Double?,
     colore: Color,
     prezzoMigliore: Double?,
     selezionato: Boolean,
@@ -670,7 +843,14 @@ private fun RigaImpianto(
             Text(
                 text = listOfNotNull(
                     impianto.bandiera.ifEmpty { null },
-                    formattaDistanza(impianto.distanzaKm),
+                    // Lungo un viaggio la distanza e' quanta strada manca, non quanto
+                    // dista in linea d'aria: "fra 87 km" si capisce al volo.
+                    if (lungoPercorso) "km ${impianto.distanzaKm.toInt()}"
+                    else formattaDistanza(impianto.distanzaKm),
+                    // Quanto si esce dalla strada: dice se ci si arriva comodi, non
+                    // se conviene — dentro un chilometro la deviazione vale centesimi.
+                    deviazioneKm?.takeIf { lungoPercorso && it >= 0.05 }
+                        ?.let { "${formattaDistanza(it)} fuori strada" },
                 ).joinToString(" · "),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,

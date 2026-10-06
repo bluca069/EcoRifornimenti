@@ -17,6 +17,7 @@ Dati live dall'**Osservaprezzi Carburanti** del MIMIT. Nessun backend proprio.
 | F6 | Scheda impianto con indirizzo, orari, servizi, navigazione | fatta |
 | F7 | Lista ordinata, fasce di prezzo, declutter targhette | fatta |
 | F8 | Porting iOS | fatta, con un limite noto (vedi sotto) |
+| F9 | Ricerca lungo un percorso (destinazione, strada sulla mappa, progressivo e deviazione) | fatta (F9.1-F9.4; restano F9.5 e la ricerca manuale per citta') |
 
 Piano completo in `docs/piano_sviluppo.md`, analisi delle fonti dati in
 `docs/analisi_fonti_dati.md`.
@@ -49,7 +50,7 @@ Serve il JDK 21 (il percorso e' in `gradle.properties`, come in DomusHub).
           :shared:core-api:jvmTest :shared:ui:testDebugUnitTest
 ```
 
-74 test. Per l'app Android: `./gradlew :androidApp:assembleDebug`.
+134 test. Per l'app Android: `./gradlew :androidApp:assembleDebug`.
 
 I test usano risposte reali del servizio, registrate in `RispostaEsempio`.
 C'e' anche un test che chiama davvero l'Osservaprezzi, spento di default perche'
@@ -87,6 +88,13 @@ L'API copre al massimo **10 km per chiamata**, quindi:
 | 10 km | 1 |
 | 15 km | 7 |
 | 25 km | 19 |
+
+Lungo un **percorso** basta sempre **una chiamata sola**, qualunque sia la distanza: il
+servizio accetta l'intera spezzata (campionata a 2 km) e cerca in un corridoio di circa
+un chilometro per lato. Il percorso lo calcola OSRM (istanza FOSSGIS) e la destinazione
+si cerca con Photon, entrambi su dati OpenStreetMap: sono infrastrutture pubbliche a uso
+equo, quindi una sola chiamata di rotta per ricerca, autocompletamento solo a mano
+ferma, tetto di 50 km e cache di tratta.
 
 La prima cella interrogata e' sempre quella dell'utente: la mappa si popola in circa
 un secondo a qualunque raggio, e gli anelli esterni la riempiono man mano.

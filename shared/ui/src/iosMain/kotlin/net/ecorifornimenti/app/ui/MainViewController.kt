@@ -7,6 +7,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import net.ecorifornimenti.app.api.RicercaImpianti
 import net.ecorifornimenti.app.api.osservaprezziClient
+import net.ecorifornimenti.app.api.servizioLuoghiPredefinito
+import net.ecorifornimenti.app.api.servizioPercorsoPredefinito
 import net.ecorifornimenti.app.geo.PosizioneIos
 import platform.Foundation.NSNotificationCenter
 import platform.Foundation.NSOperationQueue
@@ -23,10 +25,13 @@ import platform.UIKit.UIViewController
 fun MainViewController(): UIViewController {
     val posizioni = PosizioneIos()
     val modello = ModelloRicerca(
-        ricerca = RicercaImpianti(osservaprezziClient()),
+        // I percorsi e i luoghi non vengono dal Ministero: il primo e' OSRM, il
+        // secondo Nominatim, entrambi su dati OpenStreetMap.
+        ricerca = RicercaImpianti(osservaprezziClient(), percorsi = servizioPercorsoPredefinito()),
         posizioni = posizioni,
         scope = CoroutineScope(SupervisorJob() + Dispatchers.Main),
         preferenze = PreferenzeIos(),
+        luoghi = servizioLuoghiPredefinito(),
     )
     // Al primo avvio il permesso non c'e' ancora: si chiede, e si parte davvero
     // quando l'utente ha risposto. Se era gia' concesso si parte subito.
