@@ -32,6 +32,11 @@ sealed class ErroreRicerca(message: String) : Exception(message) {
     }
     /** L'API ha risposto qualcosa di inatteso: e' non documentata, puo' cambiare. */
     class RispostaInattesa(dettaglio: String) : ErroreRicerca("Risposta non riconosciuta: $dettaglio")
+    /** Fra i due punti non esiste una strada percorribile (o il motore non la trova). */
+    object PercorsoNonTrovato : ErroreRicerca("Nessun percorso fra i due punti")
+    /** Oltre il tetto: chi fa tanta strada non sceglie il distributore in partenza. */
+    object PercorsoTroppoLungo :
+        ErroreRicerca("Percorso troppo lungo: la ricerca lungo la strada arriva a 50 km")
 }
 
 /**
@@ -67,6 +72,26 @@ class OsservaprezziClient(
                         fuelType = fuelType,
                     )
                 )
+            }
+        }
+        if (!risposta.success) throw ErroreRicerca.RispostaInattesa("success=false")
+        return risposta.results.mapNotNull { it.toModel() }
+    }
+
+    /**
+     * Gli impianti lungo un percorso, dato come spezzata.
+     *
+     * A differenza della ricerca per zona basta **una sola chiamata** anche per
+     * duecento chilometri: il servizio accetta tutti i punti insieme e cerca in un
+     * corridoio di circa mezzo chilometro attorno alla strada. In cambio non calcola
+     * la distanza, che ci tocca ricavare da soli.
+     */
+    suspend fun cercaLungoPercorso(punti: List<Posizione>, fuelType: String? = null): List<Impianto> {
+        if (punti.size < 2) return emptyList()
+        val risposta: RicercaResponse = eseguiConRitento {
+            http.post("$baseUrl/search/route") {
+                contentType(ContentType.Application.Json)
+                setBody(RicercaPercorsoRequest(points = punti, fuelType = fuelType))
             }
         }
         if (!risposta.success) throw ErroreRicerca.RispostaInattesa("success=false")

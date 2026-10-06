@@ -21,6 +21,17 @@ internal data class RicercaZonaRequest(
     val priceOrder: String = "asc",
 )
 
+/**
+ * La ricerca lungo un percorso: i punti sono la spezzata della strada, non un centro.
+ * Il servizio cerca in un corridoio di circa mezzo chilometro attorno a essa.
+ */
+@Serializable
+internal data class RicercaPercorsoRequest(
+    val points: List<Posizione>,
+    val fuelType: String? = null,
+    val priceOrder: String = "asc",
+)
+
 @Serializable
 internal data class RicercaResponse(
     val success: Boolean = true,

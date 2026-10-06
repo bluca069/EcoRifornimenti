@@ -77,3 +77,44 @@ class IntegrazioneOsservaprezziTest {
         val DUOMO_MILANO = Posizione(45.4642, 9.19)
     }
 }
+
+/**
+ * La ricerca su percorso contro i servizi veri: OSRM per la strada, Osservaprezzi
+ * per i prezzi. Spenta come le altre, si accende con `-Dintegrazione=true`.
+ */
+class IntegrazionePercorsoTest {
+
+    private val attivo = System.getProperty("integrazione") == "true"
+
+    @Test
+    fun `Firenze-Siena in una chiamata sola`() {
+        if (!attivo) return
+        val client = OsservaprezziClient(engineHttpPredefinito())
+        try {
+            val ricerca = RicercaImpianti(client, percorsi = PercorsoOsrm(engineHttpPredefinito()))
+            val pref = PreferenzaRicerca(TipoCarburante.BENZINA, raggioKm = 10)
+            val esito = runBlocking {
+                ricerca.cercaSuPercorso(
+                    // Firenze -> Siena: 75 km di strada, la tratta su cui sono state
+                    // fatte le misure del piano. Oltre i 50 km il tetto ferma la
+                    // ricerca, quindi si parte da Poggibonsi.
+                    partenza = Posizione(43.4686, 11.1489),
+                    arrivo = Posizione(43.3188, 11.3308),
+                    pref = pref,
+                )
+            }
+            assertTrue(esito.percorso.distanzaKm in 20.0..50.0, "km: ${esito.percorso.distanzaKm}")
+            assertTrue(esito.impianti.isNotEmpty(), "impianti: ${esito.impianti.size}")
+            val primo = esito.impianti.first()
+            println(
+                "[integrazione] percorso ${esito.percorso.distanzaKm.toInt()} km, " +
+                    "${esito.percorso.durataMinuti} min, ${esito.impianti.size} distributori; " +
+                    "piu' economico: ${primo.impianto.nome} a " +
+                    "${primo.impianto.prezzoPer(pref)!!.prezzo} dopo ${primo.kmDallaPartenza.toInt()} km, " +
+                    "${(primo.deviazioneKm * 1000).toInt()} m fuori strada"
+            )
+        } finally {
+            client.chiudi()
+        }
+    }
+}

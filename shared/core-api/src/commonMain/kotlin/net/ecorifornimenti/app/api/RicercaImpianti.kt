@@ -8,12 +8,41 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
+import net.ecorifornimenti.app.geo.Percorso
+import net.ecorifornimenti.app.geo.PERCORSO_MASSIMO_KM
+import net.ecorifornimenti.app.geo.campionaPercorso
+import net.ecorifornimenti.app.geo.deviazioneDalPercorso
 import net.ecorifornimenti.app.geo.distanzaKm
 import net.ecorifornimenti.app.geo.grigliaRicerca
+import net.ecorifornimenti.app.geo.progressivaSulPercorso
 import net.ecorifornimenti.app.model.DettaglioImpianto
 import net.ecorifornimenti.app.model.Impianto
 import net.ecorifornimenti.app.model.Posizione
 import net.ecorifornimenti.app.model.PreferenzaRicerca
+
+/**
+ * Un distributore lungo il percorso, con quanto manca ad arrivarci.
+ *
+ * La distanza in linea d'aria dal punto di partenza non direbbe nulla a chi guida:
+ * quello che serve e' "fra 87 km", cioe' la progressiva sulla strada.
+ */
+data class ImpiantoSulPercorso(
+    val impianto: Impianto,
+    val kmDallaPartenza: Double,
+    /**
+     * Quanto si esce dalla strada per raggiungerlo. E' una comodita' ("ci arrivo
+     * facilmente?"), non un criterio di scelta: dentro un corridoio di un chilometro
+     * la deviazione vale una quindicina di centesimi, mentre dieci centesimi al litro
+     * su un pieno valgono cinque euro. Il prezzo domina di trenta volte.
+     */
+    val deviazioneKm: Double = 0.0,
+)
+
+/** L'esito di una ricerca lungo un percorso. */
+data class RisultatoPercorso(
+    val percorso: Percorso,
+    val impianti: List<ImpiantoSulPercorso>,
+)
 
 /**
  * Lo stato di una ricerca mentre procede: la mappa si disegna su questo.
@@ -46,6 +75,19 @@ interface SorgenteImpianti {
     suspend fun dettaglio(idImpianto: Int): DettaglioImpianto
 
     /**
+     * I distributori lungo la strada fra due punti, dal piu' economico.
+     *
+     * Serve a chi deve fare un viaggio e vuole sapere dove fermarsi: in autostrada
+     * il self costa circa dieci centesimi al litro in piu' della rete ordinaria, e su
+     * un pieno sono diversi euro.
+     */
+    suspend fun cercaSuPercorso(
+        partenza: Posizione,
+        arrivo: Posizione,
+        pref: PreferenzaRicerca,
+    ): RisultatoPercorso
+
+    /**
      * Dimentica tutto quello che si era gia' chiesto al servizio.
      *
      * Serve quando e' l'utente a chiedere esplicitamente di aggiornare: in quel
@@ -69,6 +111,8 @@ interface SorgenteImpianti {
 class RicercaImpianti(
     private val client: OsservaprezziClient,
     private val cache: CacheRicerca = CacheRicerca(),
+    /** Chi calcola la strada. Assente finche' la ricerca su percorso non serve. */
+    private val percorsi: ServizioPercorso? = null,
 ) : SorgenteImpianti {
 
     /**
@@ -76,6 +120,13 @@ class RicercaImpianti(
      * confrontano due o tre stazioni vicine — e nel frattempo i dati non cambiano.
      */
     private val cacheDettagli = mutableMapOf<Int, DettaglioImpianto>()
+
+    /**
+     * Le tratte gia' chieste. Tornare indietro dalla scheda, o cambiare self/servito,
+     * non deve ricontattare ne' il motore dei percorsi ne' l'Osservaprezzi: una strada
+     * non cambia in venti minuti, e nemmeno i prezzi.
+     */
+    private val cacheTratte = CacheTratte()
 
     /**
      * Emette un aggiornamento ogni volta che una cella arriva: il primo contiene gia'
@@ -131,8 +182,46 @@ class RicercaImpianti(
         return ultimo
     }
 
+    /**
+     * Prima si fa disegnare la strada, poi la si consegna all'Osservaprezzi tutta
+     * insieme: una chiamata sola, qualunque sia la lunghezza del viaggio.
+     *
+     * La spezzata va **campionata** prima di spedirla — il servizio cerca in mezzo
+     * chilometro attorno a ogni punto, e OSRM ne restituisce piu' di mille per
+     * duecento chilometri, molti dei quali a pochi metri l'uno dall'altro.
+     */
+    override suspend fun cercaSuPercorso(
+        partenza: Posizione,
+        arrivo: Posizione,
+        pref: PreferenzaRicerca,
+    ): RisultatoPercorso {
+        val percorso = percorsi?.calcola(partenza, arrivo)
+            ?: throw ErroreRicerca.PercorsoNonTrovato
+        // Il tetto si verifica sulla distanza **stradale**, non sulla linea d'aria fra
+        // i due punti: sono numeri diversi, e quello che conta e' la strada.
+        if (percorso.distanzaKm > PERCORSO_MASSIMO_KM) throw ErroreRicerca.PercorsoTroppoLungo
+        val campionati = campionaPercorso(percorso.punti)
+        val trovati = cacheTratte.oppure(campionati, pref.fuelType) {
+            client.cercaLungoPercorso(campionati, pref.fuelType)
+        }
+        val impianti = trovati
+            .filter { it.prezzoPer(pref) != null }
+            .map {
+                ImpiantoSulPercorso(
+                    impianto = it,
+                    kmDallaPartenza = progressivaSulPercorso(campionati, it.posizione),
+                    deviazioneKm = deviazioneDalPercorso(campionati, it.posizione),
+                )
+            }
+            .sortedWith(
+                compareBy({ it.impianto.prezzoPer(pref)!!.prezzo }, { it.kmDallaPartenza })
+            )
+        return RisultatoPercorso(percorso, impianti)
+    }
+
     override suspend fun svuotaCache() {
         cache.svuota()
+        cacheTratte.svuota()
         cacheDettagli.clear()
     }
 

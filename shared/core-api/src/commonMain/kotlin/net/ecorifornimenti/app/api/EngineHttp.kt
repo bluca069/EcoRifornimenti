@@ -8,5 +8,17 @@ import io.ktor.client.engine.HttpClientEngine
  */
 expect fun engineHttpPredefinito(): HttpClientEngine
 
-/** Il client pronto all'uso, con il motore giusto per la piattaforma corrente. */
+/*
+ * Le tre fabbriche qui sotto esistono perche' le app non debbano conoscere Ktor: il
+ * motore HTTP e' un dettaglio di questo modulo, e il suo tipo non e' nemmeno visibile
+ * da fuori.
+ */
+
+/** Il client dell'Osservaprezzi, con il motore giusto per la piattaforma corrente. */
 fun osservaprezziClient(): OsservaprezziClient = OsservaprezziClient(engineHttpPredefinito())
+
+/** Chi calcola la strada fra due punti (OSRM su dati OpenStreetMap). */
+fun servizioPercorsoPredefinito(): ServizioPercorso = PercorsoOsrm(engineHttpPredefinito())
+
+/** Chi trasforma un nome di luogo in coordinate (Photon su dati OpenStreetMap). */
+fun servizioLuoghiPredefinito(): ServizioLuoghi = LuoghiPhoton(engineHttpPredefinito())
