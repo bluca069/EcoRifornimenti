@@ -23,6 +23,7 @@ import kotlinx.cinterop.useContents
 import kotlinx.cinterop.ObjCSignatureOverride
 import kotlinx.cinterop.readValue
 import net.ecorifornimenti.app.geo.distanzaKm
+import net.ecorifornimenti.app.geo.giaVisibile
 import net.ecorifornimenti.app.model.FasciaPrezzo
 import net.ecorifornimenti.app.model.Impianto
 import net.ecorifornimenti.app.model.Posizione
@@ -210,13 +211,24 @@ private class StatoMappaIos {
         // Scegliendo un distributore dalla lista la mappa ci va sopra: senza, la
         // scheda si apre su un impianto che puo' essere fuori dalla vista.
         if (selezionato != null && selezionato.id != ultimaSelezione) {
-            mappa.setCenterCoordinate(
-                CLLocationCoordinate2DMake(selezionato.posizione.lat, selezionato.posizione.lng),
-                zoomLevel = maxOf(mappa.zoomLevel, ZOOM_DISTRIBUTORE),
-                animated = true,
-            )
-            // Come sopra: la vista e' sul distributore scelto e va lasciata stare.
-            ultimoCentro = centro
+            // Se il marker e' gia' sotto gli occhi la mappa non si tocca: basta che si
+            // evidenzi. Spostarla farebbe perdere il riferimento, in cambio di niente.
+            val gia = mappa.visibleCoordinateBounds.useContents {
+                giaVisibile(
+                    sudOvest = Posizione(sw.latitude, sw.longitude),
+                    nordEst = Posizione(ne.latitude, ne.longitude),
+                    punto = selezionato.posizione,
+                )
+            }
+            if (!gia) {
+                mappa.setCenterCoordinate(
+                    CLLocationCoordinate2DMake(selezionato.posizione.lat, selezionato.posizione.lng),
+                    zoomLevel = maxOf(mappa.zoomLevel, ZOOM_DISTRIBUTORE),
+                    animated = true,
+                )
+                // Come sopra: la vista e' sul distributore scelto e va lasciata stare.
+                ultimoCentro = centro
+            }
         }
         disegnati = idOra
         ultimaSelezione = selezionato?.id

@@ -12,6 +12,7 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
 import net.ecorifornimenti.app.geo.distanzaKm
+import net.ecorifornimenti.app.geo.giaVisibile
 import net.ecorifornimenti.app.model.FasciaPrezzo
 import net.ecorifornimenti.app.model.Impianto
 import net.ecorifornimenti.app.model.Posizione
@@ -220,18 +221,29 @@ private class StatoMappa {
             // la scheda si apre su un impianto che puo' essere fuori dalla vista, e
             // tocca cercarlo a mano fra le targhette.
             if (selezionato != null && selezionato.id != ultimaSelezione) {
-                mappa.animateCamera(
-                    CameraUpdateFactory.newLatLngZoom(
-                        LatLng(selezionato.posizione.lat, selezionato.posizione.lng),
-                        // Se si arriva dalla vista di un intero viaggio lo zoom e'
-                        // lontanissimo: si scende a una scala in cui si vede la strada.
-                        maxOf(mappa.cameraPosition.zoom, ZOOM_DISTRIBUTORE),
-                    )
+                // Se il marker e' gia' sotto gli occhi la mappa non si tocca: basta
+                // che si evidenzi. Spostarla farebbe perdere il riferimento di dove
+                // ci si trovava, in cambio di niente.
+                val inquadrato = mappa.projection.visibleRegion.latLngBounds
+                val gia = giaVisibile(
+                    sudOvest = Posizione(inquadrato.latitudeSouth, inquadrato.longitudeWest),
+                    nordEst = Posizione(inquadrato.latitudeNorth, inquadrato.longitudeEast),
+                    punto = selezionato.posizione,
                 )
-                // Si segna il centro come gia' inquadrato: senza, il ricentro
-                // automatico qui sotto riporterebbe subito la vista sull'area
-                // cercata, annullando lo spostamento appena fatto.
-                ultimoCentro = centro
+                if (!gia) {
+                    mappa.animateCamera(
+                        CameraUpdateFactory.newLatLngZoom(
+                            LatLng(selezionato.posizione.lat, selezionato.posizione.lng),
+                            // Arrivando dalla vista di un intero viaggio lo zoom e'
+                            // lontanissimo: si scende a una scala in cui si vede la strada.
+                            maxOf(mappa.cameraPosition.zoom, ZOOM_DISTRIBUTORE),
+                        )
+                    )
+                    // Si segna il centro come gia' inquadrato: senza, il ricentro
+                    // automatico qui sotto riporterebbe subito la vista sull'area
+                    // cercata, annullando lo spostamento appena fatto.
+                    ultimoCentro = centro
+                }
             }
             disegnati = idOra
             ultimaSelezione = selezionato?.id

@@ -130,3 +130,42 @@ const val PASSO_CAMPIONAMENTO_KM = 2.0
  * sono ~26 punti, contro gli 88 che il servizio ha gia' accettato senza storie.
  */
 const val PERCORSO_MASSIMO_KM = 50.0
+
+/**
+ * Se [punto] e' gia' sotto gli occhi di chi guarda la mappa.
+ *
+ * Non basta che stia dentro il riquadro inquadrato: sopra c'e' la barra dei filtri e
+ * sotto la classifica, che ne coprono due fasce. Un marker finito li' sotto e'
+ * inquadrato ma invisibile, quindi conta come fuori.
+ *
+ * Serve a decidere se **non** muovere la mappa: spostarla quando il marker e' gia'
+ * visibile e' solo disorientante, perche' chi guarda perde il riferimento di dove si
+ * trovava senza guadagnare nulla.
+ *
+ * @param sudOvest l'angolo in basso a sinistra del riquadro inquadrato.
+ * @param nordEst l'angolo in alto a destra.
+ * @param coperturaAlta quanta parte dell'altezza e' nascosta dai filtri.
+ * @param coperturaBassa quanta ne nasconde la classifica.
+ */
+fun giaVisibile(
+    sudOvest: Posizione,
+    nordEst: Posizione,
+    punto: Posizione,
+    coperturaAlta: Double = COPERTURA_FILTRI,
+    coperturaBassa: Double = COPERTURA_CLASSIFICA,
+): Boolean {
+    val altezza = nordEst.lat - sudOvest.lat
+    val larghezza = nordEst.lng - sudOvest.lng
+    if (altezza <= 0.0 || larghezza <= 0.0) return false
+    val latMin = sudOvest.lat + altezza * coperturaBassa
+    val latMax = nordEst.lat - altezza * coperturaAlta
+    // Un margine anche ai lati: un marker a filo del bordo si vede a meta'.
+    val lngMin = sudOvest.lng + larghezza * MARGINE_LATERALE
+    val lngMax = nordEst.lng - larghezza * MARGINE_LATERALE
+    return punto.lat in latMin..latMax && punto.lng in lngMin..lngMax
+}
+
+/** Quanto schermo si prendono la barra dei filtri e la classifica dei prezzi. */
+private const val COPERTURA_FILTRI = 0.14
+private const val COPERTURA_CLASSIFICA = 0.30
+private const val MARGINE_LATERALE = 0.08

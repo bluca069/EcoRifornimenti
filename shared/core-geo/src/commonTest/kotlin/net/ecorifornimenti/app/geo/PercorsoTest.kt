@@ -127,3 +127,46 @@ class ProgressivaSulPercorsoTest {
         assertEquals(0.0, progressivaSulPercorso(emptyList(), MILANO))
     }
 }
+
+class GiaVisibileTest {
+
+    private val sudOvest = Posizione(45.40, 9.10)
+    private val nordEst = Posizione(45.50, 9.30)
+
+    private fun visibile(lat: Double, lng: Double) =
+        giaVisibile(sudOvest, nordEst, Posizione(lat, lng))
+
+    @Test
+    fun `al centro della mappa e' visibile`() {
+        assertTrue(visibile(45.45, 9.20))
+    }
+
+    @Test
+    fun `fuori dal riquadro non e' visibile`() {
+        assertTrue(!visibile(45.60, 9.20), "sopra")
+        assertTrue(!visibile(45.30, 9.20), "sotto")
+        assertTrue(!visibile(45.45, 9.40), "a destra")
+    }
+
+    @Test
+    fun `sotto la classifica e' inquadrato ma coperto`() {
+        // Dentro il riquadro, ma nella fascia bassa che la lista nasconde: muovere
+        // la mappa serve, perche' li' il marker non si vede.
+        assertTrue(!visibile(45.41, 9.20))
+    }
+
+    @Test
+    fun `sotto la barra dei filtri e' coperto`() {
+        assertTrue(!visibile(45.495, 9.20))
+    }
+
+    @Test
+    fun `a filo del bordo laterale conta come fuori`() {
+        assertTrue(!visibile(45.45, 9.105))
+    }
+
+    @Test
+    fun `un riquadro degenere non inganna`() {
+        assertTrue(!giaVisibile(sudOvest, sudOvest, Posizione(45.40, 9.10)))
+    }
+}
