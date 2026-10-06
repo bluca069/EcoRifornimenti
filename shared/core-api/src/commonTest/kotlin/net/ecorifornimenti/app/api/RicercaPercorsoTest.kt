@@ -6,6 +6,7 @@ import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.headersOf
 import kotlinx.coroutines.test.runTest
+import kotlin.time.Instant
 import net.ecorifornimenti.app.geo.Percorso
 import net.ecorifornimenti.app.model.Posizione
 import net.ecorifornimenti.app.model.PreferenzaRicerca
@@ -18,6 +19,13 @@ import kotlin.test.assertTrue
 private val MILANO = Posizione(45.4642, 9.19)
 private val BOLOGNA = Posizione(44.4949, 11.3426)
 private val JSON = headersOf(HttpHeaders.ContentType, "application/json")
+
+/**
+ * Il giorno in cui furono registrate le risposte d'esempio. Fissarlo tiene i campioni
+ * dentro la finestra di freschezza: senza, invecchierebbero da soli e un bel giorno i
+ * test comincerebbero a fallire senza che nessuno abbia toccato niente.
+ */
+private val QUANDO_FURONO_REGISTRATI = Instant.parse("2026-09-15T08:00:00Z")
 
 /** Percorso finto: una strada dritta verso sud, dentro il tetto dei 50 km. */
 private fun percorsoFinto(km: Double = 40.0) = Percorso(
@@ -48,7 +56,7 @@ class RicercaSuPercorsoTest {
             respond(risposta, HttpStatusCode.OK, JSON)
         }
         val client = OsservaprezziClient(engine, attesePerRitento = listOf(1), attendi = {})
-        return RicercaImpianti(client, percorsi = percorsi)
+        return RicercaImpianti(client, percorsi = percorsi, adesso = { QUANDO_FURONO_REGISTRATI })
     }
 
     @Test

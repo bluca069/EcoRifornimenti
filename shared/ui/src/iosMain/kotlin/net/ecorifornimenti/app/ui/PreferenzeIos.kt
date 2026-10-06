@@ -12,11 +12,17 @@ class PreferenzeIos(
         tipo = archivio.stringForKey(CodificaPreferenze.CHIAVE_TIPO),
         modalita = archivio.stringForKey(CodificaPreferenze.CHIAVE_MODALITA),
         raggio = archivio.integerForKey(CodificaPreferenze.CHIAVE_RAGGIO).toInt().takeIf { it > 0 },
+        freschezza = archivio.integerForKey(CodificaPreferenze.CHIAVE_FRESCHEZZA).toInt()
+            .takeIf { it > 0 },
     )
 
     override fun salva(preferenza: PreferenzaRicerca) {
         archivio.setObject(preferenza.tipo.name, CodificaPreferenze.CHIAVE_TIPO)
         archivio.setObject(preferenza.modalita.name, CodificaPreferenze.CHIAVE_MODALITA)
         archivio.setInteger(preferenza.raggioKm.toLong(), CodificaPreferenze.CHIAVE_RAGGIO)
+        archivio.setInteger(
+            preferenza.freschezzaGiorni.toLong(),
+            CodificaPreferenze.CHIAVE_FRESCHEZZA,
+        )
     }
 }

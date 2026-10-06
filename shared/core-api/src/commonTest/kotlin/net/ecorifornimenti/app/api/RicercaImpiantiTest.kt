@@ -7,6 +7,7 @@ import io.ktor.http.HttpStatusCode
 import io.ktor.http.headersOf
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.runTest
+import kotlin.time.Instant
 import net.ecorifornimenti.app.model.Posizione
 import net.ecorifornimenti.app.model.PreferenzaRicerca
 import net.ecorifornimenti.app.model.TipoCarburante
@@ -17,6 +18,13 @@ import kotlin.test.assertTrue
 
 private val MILANO = Posizione(45.4642, 9.19)
 private val JSON_HEADER = headersOf(HttpHeaders.ContentType, "application/json")
+
+/**
+ * Il giorno in cui furono registrate le risposte d'esempio. Fissarlo tiene i campioni
+ * dentro la finestra di freschezza: senza, invecchierebbero da soli e un bel giorno i
+ * test comincerebbero a fallire senza che nessuno abbia toccato niente.
+ */
+private val QUANDO_FURONO_REGISTRATI = Instant.parse("2026-09-15T08:00:00Z")
 
 /** Conta le chiamate e risponde secondo una regola, per osservare cosa fa la ricerca. */
 private class ServizioFinto(val risposta: (Int) -> Pair<HttpStatusCode, String>) {
@@ -38,7 +46,7 @@ class RicercaImpiantiTest {
     @Test
     fun `a dieci km una sola chiamata e un solo aggiornamento`() = runTest {
         val servizio = ServizioFinto { HttpStatusCode.OK to RispostaEsempio.zonaMilano }
-        val ricerca = RicercaImpianti(servizio.client())
+        val ricerca = RicercaImpianti(servizio.client(), adesso = { QUANDO_FURONO_REGISTRATI })
 
         val passi = ricerca.cerca(MILANO, PreferenzaRicerca(raggioKm = 10)).toList()
 
@@ -51,7 +59,7 @@ class RicercaImpiantiTest {
     @Test
     fun `a venticinque km la prima emissione arriva prima di finire`() = runTest {
         val servizio = ServizioFinto { HttpStatusCode.OK to RispostaEsempio.zonaMilano }
-        val ricerca = RicercaImpianti(servizio.client())
+        val ricerca = RicercaImpianti(servizio.client(), adesso = { QUANDO_FURONO_REGISTRATI })
 
         val passi = ricerca.cerca(MILANO, PreferenzaRicerca(raggioKm = 25)).toList()
 
@@ -67,7 +75,7 @@ class RicercaImpiantiTest {
     @Test
     fun `gli impianti ripetuti fra celle vicine si contano una volta sola`() = runTest {
         val servizio = ServizioFinto { HttpStatusCode.OK to RispostaEsempio.zonaMilano }
-        val ricerca = RicercaImpianti(servizio.client())
+        val ricerca = RicercaImpianti(servizio.client(), adesso = { QUANDO_FURONO_REGISTRATI })
 
         val esito = ricerca.cercaTutto(MILANO, PreferenzaRicerca(raggioKm = 25))
 
@@ -80,7 +88,7 @@ class RicercaImpiantiTest {
         val servizio = ServizioFinto { n ->
             HttpStatusCode.OK to if (n == 0) RispostaEsempio.zonaMilano else RispostaEsempio.zonaLontana
         }
-        val ricerca = RicercaImpianti(servizio.client())
+        val ricerca = RicercaImpianti(servizio.client(), adesso = { QUANDO_FURONO_REGISTRATI })
 
         val esito = ricerca.cercaTutto(MILANO, PreferenzaRicerca(raggioKm = 25))
 
@@ -91,7 +99,7 @@ class RicercaImpiantiTest {
     @Test
     fun `ordina per prezzo crescente del carburante scelto`() = runTest {
         val servizio = ServizioFinto { HttpStatusCode.OK to RispostaEsempio.zonaMilano }
-        val ricerca = RicercaImpianti(servizio.client())
+        val ricerca = RicercaImpianti(servizio.client(), adesso = { QUANDO_FURONO_REGISTRATI })
         val pref = PreferenzaRicerca(TipoCarburante.BENZINA, raggioKm = 10)
 
         val esito = ricerca.cercaTutto(MILANO, pref)
@@ -104,7 +112,7 @@ class RicercaImpiantiTest {
     @Test
     fun `la distanza e' quella dall'utente non quella dichiarata dall'API`() = runTest {
         val servizio = ServizioFinto { HttpStatusCode.OK to RispostaEsempio.zonaMilano }
-        val ricerca = RicercaImpianti(servizio.client())
+        val ricerca = RicercaImpianti(servizio.client(), adesso = { QUANDO_FURONO_REGISTRATI })
 
         val tamoil = ricerca.cercaTutto(MILANO, PreferenzaRicerca(raggioKm = 10))
             .first { it.id == 33860 }
@@ -119,7 +127,7 @@ class RicercaImpiantiTest {
             if (n == 0) HttpStatusCode.OK to RispostaEsempio.zonaMilano
             else HttpStatusCode.InternalServerError to ""
         }
-        val ricerca = RicercaImpianti(servizio.client())
+        val ricerca = RicercaImpianti(servizio.client(), adesso = { QUANDO_FURONO_REGISTRATI })
 
         val esito = ricerca.cercaTutto(MILANO, PreferenzaRicerca(raggioKm = 25))
 
@@ -129,7 +137,7 @@ class RicercaImpiantiTest {
     @Test
     fun `se cade la prima cella l'errore arriva all'utente`() = runTest {
         val servizio = ServizioFinto { HttpStatusCode.InternalServerError to "" }
-        val ricerca = RicercaImpianti(servizio.client())
+        val ricerca = RicercaImpianti(servizio.client(), adesso = { QUANDO_FURONO_REGISTRATI })
 
         assertFailsWith<ErroreRicerca.RispostaInattesa> {
             ricerca.cercaTutto(MILANO, PreferenzaRicerca(raggioKm = 25))
@@ -139,7 +147,7 @@ class RicercaImpiantiTest {
     @Test
     fun `nessun risultato non e' un errore`() = runTest {
         val servizio = ServizioFinto { HttpStatusCode.OK to RispostaEsempio.zonaVuota }
-        val ricerca = RicercaImpianti(servizio.client())
+        val ricerca = RicercaImpianti(servizio.client(), adesso = { QUANDO_FURONO_REGISTRATI })
 
         assertTrue(ricerca.cercaTutto(MILANO, PreferenzaRicerca(raggioKm = 10)).isEmpty())
     }
@@ -147,7 +155,7 @@ class RicercaImpiantiTest {
     @Test
     fun `ripetere la stessa ricerca non richiama il servizio`() = runTest {
         val servizio = ServizioFinto { HttpStatusCode.OK to RispostaEsempio.zonaMilano }
-        val ricerca = RicercaImpianti(servizio.client())
+        val ricerca = RicercaImpianti(servizio.client(), adesso = { QUANDO_FURONO_REGISTRATI })
         val pref = PreferenzaRicerca(raggioKm = 10)
 
         ricerca.cercaTutto(MILANO, pref)
@@ -160,13 +168,54 @@ class RicercaImpiantiTest {
     @Test
     fun `cambiare carburante rifa' la ricerca`() = runTest {
         val servizio = ServizioFinto { HttpStatusCode.OK to RispostaEsempio.zonaMilano }
-        val ricerca = RicercaImpianti(servizio.client())
+        val ricerca = RicercaImpianti(servizio.client(), adesso = { QUANDO_FURONO_REGISTRATI })
 
         ricerca.cercaTutto(MILANO, PreferenzaRicerca(TipoCarburante.BENZINA, raggioKm = 10))
         val dopoBenzina = servizio.chiamate
         ricerca.cercaTutto(MILANO, PreferenzaRicerca(TipoCarburante.GASOLIO, raggioKm = 10))
 
         assertTrue(servizio.chiamate > dopoBenzina, "il filtro fa parte della chiave di cache")
+    }
+}
+
+class FreschezzaDeiPrezziTest {
+
+    /** Un impianto comunicato oggi e uno fermo da un mese. */
+    private val misto = """
+    {"success":true,"center":{"lat":45.46,"lng":9.19},"results":[
+      {"id":1,"name":"Fresco","fuels":[{"id":1,"price":1.899,"name":"Benzina","fuelId":1,"isSelf":true}],
+       "location":{"lat":45.47,"lng":9.20},"insertDate":"REAL_ADESSO","brand":"A"},
+      {"id":2,"name":"Vecchio","fuels":[{"id":2,"price":1.799,"name":"Benzina","fuelId":1,"isSelf":true}],
+       "location":{"lat":45.46,"lng":9.19},"insertDate":"2020-01-01T10:00:00Z","brand":"B"},
+      {"id":3,"name":"Senza data","fuels":[{"id":3,"price":1.999,"name":"Benzina","fuelId":1,"isSelf":true}],
+       "location":{"lat":45.465,"lng":9.195},"brand":"C"}
+    ]}
+    """.trimIndent()
+
+    private fun ricerca(): RicercaImpianti {
+        val adesso = kotlin.time.Clock.System.now().toString()
+        val engine = MockEngine {
+            respond(misto.replace("REAL_ADESSO", adesso), HttpStatusCode.OK, JSON_HEADER)
+        }
+        return RicercaImpianti(OsservaprezziClient(engine, attesePerRitento = listOf(1), attendi = {}))
+    }
+
+
+    @Test
+    fun `i prezzi troppo vecchi non compaiono`() = runTest {
+        val esito = ricerca().cercaTutto(MILANO, PreferenzaRicerca(raggioKm = 10, freschezzaGiorni = 10))
+
+        // "Vecchio" costa meno di tutti, ma il suo prezzo e' di sei anni fa: in cima
+        // alla classifica manderebbe chi guida a un distributore che non esiste piu'
+        // a quel prezzo.
+        assertTrue(esito.none { it.id == 2 }, "il prezzo del 2020 non deve passare")
+        assertTrue(esito.any { it.id == 1 }, "quello di oggi si'")
+    }
+
+    @Test
+    fun `chi non dichiara la data resta in elenco`() = runTest {
+        val esito = ricerca().cercaTutto(MILANO, PreferenzaRicerca(raggioKm = 10, freschezzaGiorni = 1))
+        assertTrue(esito.any { it.id == 3 })
     }
 }
 

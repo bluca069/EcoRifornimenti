@@ -19,6 +19,9 @@ import net.ecorifornimenti.app.model.DettaglioImpianto
 import net.ecorifornimenti.app.model.Impianto
 import net.ecorifornimenti.app.model.Posizione
 import net.ecorifornimenti.app.model.PreferenzaRicerca
+import net.ecorifornimenti.app.model.comunicatoDaMenoDi
+import kotlin.time.Clock
+import kotlin.time.Instant
 
 /**
  * Un distributore lungo il percorso, con quanto manca ad arrivarci.
@@ -113,6 +116,13 @@ class RicercaImpianti(
     private val cache: CacheRicerca = CacheRicerca(),
     /** Chi calcola la strada. Assente finche' la ricerca su percorso non serve. */
     private val percorsi: ServizioPercorso? = null,
+    /**
+     * L'ora di adesso, per decidere se un prezzo e' troppo vecchio. E' un parametro
+     * perche' un filtro che dipende dal tempo, senza poterlo fissare, non si puo'
+     * verificare: i campioni registrati invecchierebbero e i test comincerebbero a
+     * fallire da soli.
+     */
+    private val adesso: () -> Instant = { Clock.System.now() },
 ) : SorgenteImpianti {
 
     /**
@@ -205,7 +215,9 @@ class RicercaImpianti(
             client.cercaLungoPercorso(campionati, pref.fuelType)
         }
         val impianti = trovati
-            .filter { it.prezzoPer(pref) != null }
+            .filter {
+                it.prezzoPer(pref) != null && it.comunicatoDaMenoDi(pref.freschezzaGiorni, adesso())
+            }
             .map {
                 ImpiantoSulPercorso(
                     impianto = it,
@@ -249,7 +261,11 @@ class RicercaImpianti(
     ): AvanzamentoRicerca {
         val impianti = raccolti.values
             .map { it.copy(distanzaKm = distanzaKm(centro, it.posizione)) }
-            .filter { it.distanzaKm <= pref.raggioKm && it.prezzoPer(pref) != null }
+            .filter {
+                it.distanzaKm <= pref.raggioKm &&
+                    it.prezzoPer(pref) != null &&
+                    it.comunicatoDaMenoDi(pref.freschezzaGiorni, adesso())
+            }
             .sortedWith(compareBy({ it.prezzoPer(pref)!!.prezzo }, { it.distanzaKm }))
         return AvanzamentoRicerca(impianti, completate, totali)
     }

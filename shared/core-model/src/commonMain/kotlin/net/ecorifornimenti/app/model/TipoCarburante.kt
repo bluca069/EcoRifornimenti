@@ -43,6 +43,15 @@ data class PreferenzaRicerca(
     // sola chiamata, quindi la mappa compare subito.
     val modalita: ModalitaErogazione = ModalitaErogazione.SELF,
     val raggioKm: Int = 10,
+    /**
+     * Da quanti giorni al massimo puo' essere stato comunicato un prezzo perche'
+     * valga la pena mostrarlo.
+     *
+     * I gestori comunicano quando cambiano i prezzi, non ogni giorno: stringere
+     * troppo svuota la lista, e il predefinito di dieci giorni tiene dentro quasi
+     * tutti gli impianti attivi. Chi vuole solo numeri certi lo abbassa.
+     */
+    val freschezzaGiorni: Int = FRESCHEZZA_PREDEFINITA_GIORNI,
 ) {
     val fuelType: String get() = modalita.codice(tipo)
 
@@ -53,5 +62,10 @@ data class PreferenzaRicerca(
          * interrogazioni e i distributori lontani compaiono poco per volta.
          */
         val RAGGI_KM = listOf(5, 10, 15, 25)
+
+        /** Il filtro sulla freschezza va da un giorno a dieci. */
+        val FRESCHEZZA_MINIMA_GIORNI = 1
+        val FRESCHEZZA_MASSIMA_GIORNI = 10
+        const val FRESCHEZZA_PREDEFINITA_GIORNI = 10
     }
 }

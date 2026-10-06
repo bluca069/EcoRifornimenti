@@ -41,6 +41,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.Icon
@@ -78,6 +79,7 @@ import net.ecorifornimenti.app.model.ModalitaErogazione
 import net.ecorifornimenti.app.model.Posizione
 import net.ecorifornimenti.app.model.PreferenzaRicerca
 import net.ecorifornimenti.app.model.TipoCarburante
+import kotlin.math.roundToInt
 
 /**
  * La schermata unica dell'app.
@@ -521,6 +523,36 @@ private fun Scelte(preferenza: PreferenzaRicerca, onCambia: (PreferenzaRicerca) 
                     "Ricerca immediata."
                 } else {
                     "Oltre i 10 km i distributori più lontani compaiono poco per volta."
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text("Prezzi comunicati", style = MaterialTheme.typography.labelLarge)
+            Text(
+                text = when (preferenza.freschezzaGiorni) {
+                    1 -> "Nelle ultime 24 ore"
+                    else -> "Negli ultimi ${preferenza.freschezzaGiorni} giorni"
+                },
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            Slider(
+                value = preferenza.freschezzaGiorni.toFloat(),
+                onValueChange = { onCambia(preferenza.copy(freschezzaGiorni = it.roundToInt())) },
+                valueRange = PreferenzaRicerca.FRESCHEZZA_MINIMA_GIORNI.toFloat()..
+                    PreferenzaRicerca.FRESCHEZZA_MASSIMA_GIORNI.toFloat(),
+                // Nove scatti per dieci posizioni: il cursore si ferma sui giorni
+                // interi, che e' l'unica granularita' che il dato ha davvero.
+                steps = PreferenzaRicerca.FRESCHEZZA_MASSIMA_GIORNI -
+                    PreferenzaRicerca.FRESCHEZZA_MINIMA_GIORNI - 1,
+            )
+            Text(
+                text = if (preferenza.freschezzaGiorni <= 2) {
+                    "Pochi giorni lasciano fuori molti distributori: i gestori " +
+                        "comunicano quando cambiano il prezzo, non ogni giorno."
+                } else {
+                    "Chi non dichiara la data resta in elenco."
                 },
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,

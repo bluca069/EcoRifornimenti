@@ -31,13 +31,19 @@ object CodificaPreferenze {
     const val CHIAVE_TIPO = "tipo"
     const val CHIAVE_MODALITA = "modalita"
     const val CHIAVE_RAGGIO = "raggio"
+    const val CHIAVE_FRESCHEZZA = "freschezza"
 
     /**
      * Ricostruisce la preferenza da quel che si e' trovato salvato, ignorando i valori
      * che non si riconoscono: un archivio scritto da una versione futura, o corrotto,
      * deve far ripartire l'app dai valori predefiniti, non impedirne l'avvio.
      */
-    fun decodifica(tipo: String?, modalita: String?, raggio: Int?): PreferenzaRicerca {
+    fun decodifica(
+        tipo: String?,
+        modalita: String?,
+        raggio: Int?,
+        freschezza: Int? = null,
+    ): PreferenzaRicerca {
         val base = PreferenzaRicerca()
         return PreferenzaRicerca(
             tipo = net.ecorifornimenti.app.model.TipoCarburante.entries
@@ -45,6 +51,9 @@ object CodificaPreferenze {
             modalita = net.ecorifornimenti.app.model.ModalitaErogazione.entries
                 .firstOrNull { it.name == modalita } ?: base.modalita,
             raggioKm = raggio?.takeIf { it in PreferenzaRicerca.RAGGI_KM } ?: base.raggioKm,
+            freschezzaGiorni = freschezza?.takeIf {
+                it in PreferenzaRicerca.FRESCHEZZA_MINIMA_GIORNI..PreferenzaRicerca.FRESCHEZZA_MASSIMA_GIORNI
+            } ?: base.freschezzaGiorni,
         )
     }
 }

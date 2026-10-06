@@ -12,6 +12,7 @@ class PreferenzeAndroid(contesto: Context) : ArchivioPreferenze {
         tipo = archivio.getString(CodificaPreferenze.CHIAVE_TIPO, null),
         modalita = archivio.getString(CodificaPreferenze.CHIAVE_MODALITA, null),
         raggio = archivio.getInt(CodificaPreferenze.CHIAVE_RAGGIO, 0).takeIf { it > 0 },
+        freschezza = archivio.getInt(CodificaPreferenze.CHIAVE_FRESCHEZZA, 0).takeIf { it > 0 },
     )
 
     override fun salva(preferenza: PreferenzaRicerca) {
@@ -19,6 +20,7 @@ class PreferenzeAndroid(contesto: Context) : ArchivioPreferenze {
             .putString(CodificaPreferenze.CHIAVE_TIPO, preferenza.tipo.name)
             .putString(CodificaPreferenze.CHIAVE_MODALITA, preferenza.modalita.name)
             .putInt(CodificaPreferenze.CHIAVE_RAGGIO, preferenza.raggioKm)
+            .putInt(CodificaPreferenze.CHIAVE_FRESCHEZZA, preferenza.freschezzaGiorni)
             .apply()
     }
 }

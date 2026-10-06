@@ -16,6 +16,9 @@ kotlin {
     sourceSets {
         commonMain.dependencies {
             implementation(libs.kotlinx.serialization.json)
+            // Le date di comunicazione dei prezzi si confrontano qui: e' il modello
+            // a sapere se un prezzo e' troppo vecchio per essere mostrato.
+            implementation(libs.kotlinx.datetime)
         }
         commonTest.dependencies { implementation(kotlin("test")) }
     }
