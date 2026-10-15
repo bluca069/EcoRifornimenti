@@ -26,7 +26,7 @@ fun MainViewController(): UIViewController {
     val posizioni = PosizioneIos()
     val modello = ModelloRicerca(
         // I percorsi e i luoghi non vengono dal Ministero: il primo e' OSRM, il
-        // secondo Nominatim, entrambi su dati OpenStreetMap.
+        // secondo Photon, entrambi su dati OpenStreetMap.
         ricerca = RicercaImpianti(osservaprezziClient(), percorsi = servizioPercorsoPredefinito()),
         posizioni = posizioni,
         scope = CoroutineScope(SupervisorJob() + Dispatchers.Main),

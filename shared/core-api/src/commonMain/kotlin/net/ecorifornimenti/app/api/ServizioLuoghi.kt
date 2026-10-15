@@ -11,6 +11,8 @@ import io.ktor.client.request.parameter
 import io.ktor.client.statement.HttpResponse
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.Serializable
 import net.ecorifornimenti.app.model.Posizione
 
@@ -131,4 +133,57 @@ internal fun PhotonLuogoDto.toModel(): Luogo? {
         properties.state,
     ).distinct().take(2).joinToString(", ")
     return Luogo(nome = nome, dove = dove, posizione = posizione)
+}
+
+/**
+ * Ricorda quel che si e' gia' chiesto, finche' l'app vive.
+ *
+ * I suggerimenti si cercano mentre si scrive, e chi scrive torna di continuo sulle
+ * stesse lettere: cancella, riprova, riscrive lo stesso nome il giorno dopo. Tenere
+ * in **memoria volatile** le risposte evita di ridomandare a un servizio pubblico
+ * quello che ci ha gia' detto, e fa comparire la tendina all'istante.
+ *
+ * La zona entra nella chiave: lo stesso nome cercato da due province diverse e' una
+ * domanda diversa, perche' il suggerimento tiene conto di dove ci si trova.
+ */
+class LuoghiRicordati(
+    private val servizio: ServizioLuoghi,
+) : ServizioLuoghi {
+
+    private val mutex = Mutex()
+    private val ricordati = LinkedHashMap<String, List<Luogo>>()
+
+    override suspend fun cerca(testo: String, vicinoA: Posizione?): List<Luogo> {
+        val query = testo.trim()
+        if (query.length < 3) return emptyList()
+        val chiave = chiave(query, vicinoA)
+        mutex.withLock { ricordati[chiave] }?.let { return it }
+
+        val esito = servizio.cerca(query, vicinoA)
+        ricorda(chiave, esito)
+        return esito
+    }
+
+    private suspend fun ricorda(chiave: String, luoghi: List<Luogo>) = mutex.withLock {
+        // Un tetto c'e': chi scrive e cancella molte volte riempirebbe la mappa di
+        // query morte. Si butta la piu' vecchia, che e' quella che non si ricerchera'.
+        if (ricordati.size >= MASSIME_RICORDATE) {
+            ricordati.keys.firstOrNull()?.let { ricordati.remove(it) }
+        }
+        ricordati[chiave] = luoghi
+    }
+
+    /** Arrotondata al decimo di grado (~11 km), la scala a cui il suggerimento cambia. */
+    private fun chiave(query: String, vicinoA: Posizione?): String {
+        val zona = vicinoA?.let {
+            val lat = kotlin.math.round(it.lat * 10) / 10
+            val lng = kotlin.math.round(it.lng * 10) / 10
+            "$lat,$lng"
+        } ?: "*"
+        return "${query.lowercase()}@$zona"
+    }
+
+    companion object {
+        const val MASSIME_RICORDATE = 50
+    }
 }

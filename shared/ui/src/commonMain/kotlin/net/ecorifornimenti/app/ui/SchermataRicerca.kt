@@ -712,8 +712,8 @@ private fun BarraViaggio(stato: StatoRicerca, onChiudi: () -> Unit) {
         ) {
             Column(Modifier.weight(1f)) {
                 Text(
-                    // Il nome completo di Nominatim e' lunghissimo: in testa c'e' il
-                    // posto, il resto e' la gerarchia amministrativa.
+                    // Se il geocoder attacca al nome la gerarchia amministrativa,
+                    // in testa c'e' il posto e il resto non serve in una riga sola.
                     text = viaggio.destinazione.nome.substringBefore(","),
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.SemiBold,

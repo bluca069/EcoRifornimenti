@@ -20,5 +20,9 @@ fun osservaprezziClient(): OsservaprezziClient = OsservaprezziClient(engineHttpP
 /** Chi calcola la strada fra due punti (OSRM su dati OpenStreetMap). */
 fun servizioPercorsoPredefinito(): ServizioPercorso = PercorsoOsrm(engineHttpPredefinito())
 
-/** Chi trasforma un nome di luogo in coordinate (Photon su dati OpenStreetMap). */
-fun servizioLuoghiPredefinito(): ServizioLuoghi = LuoghiPhoton(engineHttpPredefinito())
+/**
+ * Chi trasforma un nome di luogo in coordinate (Photon su dati OpenStreetMap), con le
+ * risposte gia' viste tenute da parte finche' l'app vive.
+ */
+fun servizioLuoghiPredefinito(): ServizioLuoghi =
+    LuoghiRicordati(LuoghiPhoton(engineHttpPredefinito()))
