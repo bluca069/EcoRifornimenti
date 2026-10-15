@@ -173,9 +173,9 @@ private class StatoMappa {
             ultimaGps = posizioneGps
             gestore.deleteAll()
             perSimbolo.clear()
-            // Dove si trova l'utente, disegnato per primo e con la chiave piu' bassa:
-            // e' il riferimento rispetto a cui si leggono tutte le distanze, e non deve
-            // sparire per far posto a una targhetta.
+            // Dove si trova l'utente: e' il riferimento rispetto a cui si leggono
+            // tutte le distanze, quindi cede il posto solo al distributore aperto
+            // (vedi PrecedenzaMarker).
             if (posizioneGps != null) {
                 if (iconeCaricate.add(ICONA_POSIZIONE)) {
                     stile.addImage(ICONA_POSIZIONE, puntoPosizione())
@@ -185,7 +185,7 @@ private class StatoMappa {
                         .withLatLng(LatLng(posizioneGps.lat, posizioneGps.lng))
                         .withIconImage(ICONA_POSIZIONE)
                         .withIconAnchor("center")
-                        .withSymbolSortKey(-2f)
+                        .withSymbolSortKey(PrecedenzaMarker.POSIZIONE)
                 )
             }
 
@@ -212,8 +212,11 @@ private class StatoMappa {
                         // vince i conflitti: quindi si ordina per prezzo, e quando
                         // lo spazio non basta restano visibili i piu' convenienti,
                         // che sono quelli che l'utente sta cercando. Il selezionato
-                        // passa davanti a tutti.
-                        .withSymbolSortKey(if (evidenziato) -1f else prezzo.prezzo.toFloat())
+                        // passa davanti a tutti, posizione compresa.
+                        .withSymbolSortKey(
+                            if (evidenziato) PrecedenzaMarker.SELEZIONATO
+                            else PrecedenzaMarker.perPrezzo(prezzo.prezzo)
+                        )
                 )
                 perSimbolo[simbolo.id] = impianto
             }

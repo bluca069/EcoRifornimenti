@@ -46,3 +46,35 @@ private fun separazioneMinimaKm(raggioKm: Int): Double = raggioKm / 5.0
  * quello che si sta cercando; per gli altri basta sapere dove sono.
  */
 const val MASSIME_TARGHETTE = 12
+
+/**
+ * Chi resta visibile quando due marker si sovrappongono.
+ *
+ * MapLibre piazza i simboli in ordine di chiave crescente e nasconde quelli che non
+ * trovano piu' posto: **chi ha la chiave piu' bassa vince**. Le tre costanti qui sotto
+ * sono quindi una scala di precedenza, e stanno in comune — invece che dentro la mappa
+ * di Android — perche' l'ordine fra loro e' una decisione di prodotto, non un
+ * dettaglio del motore di disegno, e perche' cosi' si verifica con un test.
+ */
+object PrecedenzaMarker {
+
+    /**
+     * Il distributore aperto batte tutto, **compreso il punto della posizione**.
+     *
+     * Non e' un dettaglio: i primi della classifica sono quasi sempre a pochi
+     * chilometri da chi guarda, quindi la loro targhetta cade proprio sopra il
+     * pallino azzurro. Lasciando vincere la posizione, aprire il distributore piu'
+     * conveniente non mostrava nulla sulla mappa — piu' era vicino e vantaggioso,
+     * meno si vedeva.
+     */
+    const val SELEZIONATO = -3f
+
+    /** Dove si trova l'utente: cede solo al distributore che si sta guardando. */
+    const val POSIZIONE = -2f
+
+    /**
+     * Gli altri si ordinano per prezzo, cosi' quando lo spazio non basta restano
+     * visibili i piu' convenienti, che sono quelli che si sta cercando.
+     */
+    fun perPrezzo(prezzo: Double): Float = prezzo.toFloat()
+}

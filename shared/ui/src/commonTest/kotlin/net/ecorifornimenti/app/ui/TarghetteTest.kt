@@ -64,3 +64,32 @@ class TargletteTest {
         assertTrue(impiantiConTarghetta(emptyList(), raggioKm = 10).isEmpty())
     }
 }
+
+class PrecedenzaMarkerTest {
+
+    /**
+     * Il caso che si era rotto sul campo: i primi della classifica stanno a pochi
+     * chilometri da chi guarda, quindi la loro targhetta cade sopra il pallino della
+     * posizione. Se vince la posizione, aprire il distributore piu' conveniente non
+     * mostra niente sulla mappa.
+     */
+    @Test
+    fun ilSelezionatoBatteIlPuntoDellaPosizione() {
+        assertTrue(
+            PrecedenzaMarker.SELEZIONATO < PrecedenzaMarker.POSIZIONE,
+            "il distributore aperto deve essere piazzato prima del punto della posizione",
+        )
+    }
+
+    @Test
+    fun laPosizioneBatteUnaTarghettaQualunque() {
+        // Un prezzo di un euro e' piu' basso di qualunque carburante reale: se anche
+        // quello perde contro la posizione, perdono tutti.
+        assertTrue(PrecedenzaMarker.POSIZIONE < PrecedenzaMarker.perPrezzo(1.0))
+    }
+
+    @Test
+    fun fraDueDistributoriVinceIlPiuConveniente() {
+        assertTrue(PrecedenzaMarker.perPrezzo(1.759) < PrecedenzaMarker.perPrezzo(1.999))
+    }
+}
